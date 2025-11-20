@@ -63,21 +63,36 @@ def find_star_from_wcs(
         sx1_file : str | Path,
         unocc_2d_file : str | Path,
         occ_2d_file : str | Path,
-) -> np.ndarray:
+        return_offset : bool = False,
+) -> tuple[float, float] | tuple[tuple, float]:
     """
-    Use the WCS to find the pixel coordinates of the occulted star. The WCS has units of angular separation on one axis, with the target being placed at 0, and wavelength on the other axis. We will find the position of the star in (wl, deg) space aqnd convert that to pixels in the occulted file.
-    For this we need three files:
-    1. sx1_file : this tells us the wavelengths present in the image
-    2. sx2_unocc_file : the unocculted sx2 exposure. We use this to measure the offset of the actual trace, in separation, from the nominal position.
-    3. sx3_occ_file : the occulted sx2 exposure. We apply the offset measured in the unocculted file to the nominal position reported in this file.
+    Use the WCS to find the pixel coordinates of the occulted star. The WCS has
+    units of angular separation on one axis, with the target being placed at 0,
+    and wavelength on the other axis. We will find the position of the star in
+    (wl, deg) space aqnd convert that to pixels in the occulted file. For this
+    we need three files: 1. sx1_file : this tells us the wavelengths present in
+    the image 2. sx2_unocc_file : the unocculted sx2 exposure. We use this to
+    measure the offset of the actual trace, in separation, from the nominal
+    position. 3. sx3_occ_file : the occulted sx2 exposure. We apply the offset
+    measured in the unocculted file to the nominal position reported in this
+    file.
 
     Parameters
     ----------
-    define your parameters
+    sx1_file : str | Path,
+      The extraceted, unocculted spectrum, We want the wavelength solution.
+    unocc_2d_file : str | Path
+      The unocculted 2-D spectral image. We want to find the peaks of the PSF along the columns.
+    occ_2d_file : str | Path
+      The occulted 2-D spectral image. We need the WCS header.
+    return_offset : bool = False
+      if True, also return the difference (in degrees) between the nominal and measured positions
 
     Output
     ------
-    Define your output
+    Returns the row position of the star in the occulted exposure. If
+    return_offset is True, then it returns a tuple where the second element is
+    the distance in degrees from the nominal position.
 
     """
     # get the wavelengths of the spectrum
@@ -121,14 +136,18 @@ def find_star_from_wcs(
         # shift = nominal_row - peak_row
     # apply the shift to the occulted exposure
     with fits.open(occ_2d_file) as hdulist:
+        postarg2 = (hdulist[0].header['POSTARG2'] * units.arcsec).to(units.deg)
         w = wcs.WCS(hdulist[1].header)
         # occ_col, occ_row = w.world_to_pixel_values(
         #     wl_lo, 
         #     units.Quantity(0, unit='deg')
         # )
         # occ_pos = occ_row - shift
-        occ_row = w.world_to_pixel(
+        occ_pos = w.world_to_pixel(
             wl_lo,
-            meas_offset
+            meas_offset + postarg2
         )
-    return occ_row
+    if return_offset:
+        return occ_pos, meas_offset
+    else:
+        return occ_pos
