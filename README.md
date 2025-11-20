@@ -10,6 +10,7 @@ This repo is in a pretty disorganized state at the moment. Here's what works:
     - extracted 1-D spectrum
     - 2-D unocculted spectral image
     - 2-D occulted spectral image
+
   The observing sequence for this mode is to take an unocculted exposure at the
   F1 position and then an occulted exposure at the E1 position, along the slit.
   This function uses the WCS information to find the position of the star in the
