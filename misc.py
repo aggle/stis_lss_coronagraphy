@@ -1,9 +1,14 @@
 """
 Useful tools
 """
+from pathlib import Path
+
 import numpy as np
 import pandas as pd
+
+from astropy.io import fits
 from astropy.stats import SigmaClip
+
 from photutils.centroids import centroid_2dg as centroid_func
 from scipy import ndimage
 
@@ -184,3 +189,62 @@ def find_outliers(
         val = stats[(window_pix[0] == r) & (window_pix[1] == c)].mask.squeeze()
         mask[r, c] = val
     return mask
+
+def get_unocc_spec_stamp(
+        unocc_file : str | Path,
+        size : int = 10,
+) -> np.ndarray :
+    """
+    Extract a stamp of the unocculted spectrum from the unocc file
+
+    Parameters
+    ----------
+    unocc_file : str | Path
+      readable path to the file with the unocculted spectrum
+    size : int = 10
+      the upper and lower buffer around the center of the PSF (full height = 2*size + 1)
+    Output
+    ------
+    unocc_stamp : np.ndarray
+      2-D array with the wavelength axis along the columns
+
+    """
+    unocc_img = fits.getdata(str(unocc_file), 'SCI')
+    unocc_img_row = np.nanargmax(np.nansum(unocc_img, axis=1))
+    unocc_stamp = unocc_img[unocc_img_row-size:unocc_img_row+size+1, :]
+    return unocc_stamp
+
+def inject_template(
+    target_img : np.ndarray,
+    template : np.ndarray,
+    row : int,
+    scale : float = 1.,
+) -> np.ndarray :
+    """
+    Inject a template spectrum into the target image
+
+    Parameters
+    ----------
+    target_img : np.ndarray
+      the image to add the spectrum into. Has dimensions N rows x M cols
+    template : np.ndarray
+      the template stamp that will be added to the image. Has dimensions T < N rows, M cols
+    row : int
+      the central row of the injection site
+    scale : float = 1.
+      multiply the template by this factor
+    Output
+    ------
+    inj_img : np.ndarray
+      N x M image with the injected template
+
+    """
+
+    # pad the template to the same dimensions as the target
+    height, width = template.shape
+    dheight = int((height - height%2)/2)
+    pad_below = row - dheight
+    pad_above = target_img.shape[0]-(row + dheight)-1
+    template = np.pad(template, [(pad_below, pad_above), (0, 0)])
+    inj_img = target_img + ( template * scale )
+    return inj_img
