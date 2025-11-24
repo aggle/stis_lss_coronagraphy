@@ -8,7 +8,7 @@ import pandas as pd
 
 from astropy.io import fits
 from astropy import units
-from astropy import wcs
+from astropy.wcs import WCS
 
 from coronspec_tools import utils as ctutils
 
@@ -21,6 +21,71 @@ def interp_col(col):
     x = np.arange(col.size)
     func = interpolate.make_interp_spline(x, col)
     return func
+
+def interp_peak(
+        hdulist : fits.HDUList,
+        search_col : int = 200,
+) -> float :
+    """
+    Guess the position of the star
+
+    Parameters
+    ----------
+    hdulist : fits.HDUList,
+      HDUList with the data in the "SCI" header
+    search_col : int = 200,
+
+    Output
+    ------
+    Define your output
+
+    """
+    pass # insert body here
+    is_str = isinstance(hdulist, str)
+    if is_str:
+        hdulist = fits.open(hdulist)
+    # initial guess
+    star_row = float(hdulist['SCI'].header['CRPIX2'])-1
+    img = hdulist['SCI'].data
+
+    interp_rows = np.arange(star_row-20, star_row+20+1, dtype=int)
+    func = interp1d(interp_rows, -img[interp_rows, search_col], 'cubic')
+    interp_min = minimize_scalar(func, (float(interp_rows[0]), star_row, float(interp_rows[-1])))
+    peak_row = interp_min.x
+    if is_str:
+        hdulist.close()
+    return peak_row
+
+def find_unocc_pos(hdulist, wlsol=None):
+    """Find the position in degrees"""
+    img = hdulist[1].data
+    wcs = WCS(hdulist[1].header)
+    # generate the wavelength solution along the nominal star position
+    if wlsol is None:
+        wlsol = wcs.pixel_to_world(
+            np.arange(img.size),
+            np.ones(img.size)*wcs.wcs.crpix[1]
+        )
+    peak_wl, peak_offset = [], []
+    for wl_index in np.arange(5, 201, 10):
+        wl = wlsol[wl_index] 
+        peak_col = wcs.world_to_pixel_values(
+            wl,
+            0*units.deg,
+        )[0]
+        peak_row = interp_peak(hdulist, int(peak_col))
+        offset = wcs.pixel_to_world(
+            peak_col, peak_row
+        )[1]
+        peak_wl.append(wl)
+        peak_offset.append(offset)
+    # fit a polynomial to the peak positions
+    peak_wl, peak_offset = units.Quantity(peak_wl), units.Quantity(peak_offset)
+    polyfit = np.polynomial.Polynomial.fit(peak_wl.value, peak_offset.value, 3)
+    meas_offset = polyfit(wlsol[0].value)*units.deg
+    meas_row = wcs.world_to_pixel(wlsol[0], meas_offset)[1]
+    return meas_offset, meas_row
+
 
 def find_unocc_peaks(
         unocc_img,
@@ -108,42 +173,17 @@ def find_star_from_wcs(
     wl_lo = wavelengths.min()
     # measure the shift in nominal vs actual position in the unocc exposure
     with fits.open(unocc_2d_file) as hdulist:
-        w = wcs.WCS(hdulist[1].header)
-        nominal_col, nominal_row = w.world_to_pixel_values(
-            wl_lo, 
-            units.Quantity(0, unit='deg')
-        )
-        # temporary - measure the position from a single column
-        # define the column at which to measure the position
-        peak_wl, peak_offset = [], []
-        for wl_index in np.arange(5, 51, 5):
-            wl =wavelengths[wl_index] 
-            peak_col = w.world_to_pixel_values(
-                wl,
-                0*units.deg,
-            )[0]
-            peak_row = ctutils.interp_peak(hdulist, int(peak_col))
-            offset = w.pixel_to_world(
-                peak_col, peak_row
-            )[1]
-            peak_wl.append(wl)
-            peak_offset.append(offset)
-        # fit a line to the peak positions
-        peak_wl, peak_offset = units.Quantity(peak_wl), units.Quantity(peak_offset)
-        line = np.polynomial.Polynomial.fit(peak_wl.value, peak_offset.value, 1)
-        # fit_pos = 
-        meas_offset = line(wl_lo.value)*units.deg
-        # shift = nominal_row - peak_row
+        meas_offset = ctutils.find_unocc_pos(hdulist, wavelengths)[0]
     # apply the shift to the occulted exposure
     with fits.open(occ_2d_file) as hdulist:
         postarg2 = (hdulist[0].header['POSTARG2'] * units.arcsec).to(units.deg)
-        w = wcs.WCS(hdulist[1].header)
+        wcs = WCS(hdulist[1].header)
         # occ_col, occ_row = w.world_to_pixel_values(
         #     wl_lo, 
         #     units.Quantity(0, unit='deg')
         # )
         # occ_pos = occ_row - shift
-        occ_pos = w.world_to_pixel(
+        occ_pos = wcs.world_to_pixel(
             wl_lo,
             meas_offset + postarg2
         )
@@ -151,3 +191,5 @@ def find_star_from_wcs(
         return occ_pos, meas_offset
     else:
         return occ_pos
+
+

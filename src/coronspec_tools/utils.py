@@ -184,40 +184,6 @@ def make_sx2_mask(
 
     return mask
 
-def interp_peak(
-        hdulist : fits.HDUList,
-        search_col : int = 200,
-) -> float :
-    """
-    Guess the position of the star
-
-    Parameters
-    ----------
-    hdulist : fits.HDUList,
-      HDUList with the data in the "SCI" header
-    search_col : int = 200,
-
-    Output
-    ------
-    Define your output
-
-    """
-    pass # insert body here
-    is_str = isinstance(hdulist, str)
-    if is_str:
-        hdulist = fits.open(hdulist)
-    # initial guess
-    star_row = float(hdulist['SCI'].header['CRPIX2'])-1
-    img = hdulist['SCI'].data
-
-    interp_rows = np.arange(star_row-20, star_row+20+1, dtype=int)
-    func = interp1d(interp_rows, -img[interp_rows, search_col], 'cubic')
-    interp_min = minimize_scalar(func, (float(interp_rows[0]), star_row, float(interp_rows[-1])))
-    peak_row = interp_min.x
-    if is_str:
-        hdulist.close()
-    return peak_row
-
 
 # def clean_image(
 
