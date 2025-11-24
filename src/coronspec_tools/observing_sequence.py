@@ -73,7 +73,7 @@ class ObsSeq:
         with fits.open(unocc_file) as hdulist:
             self.unocc_wcs = WCS(hdulist[1].header)
             self.unocc_img = hdulist[1].data.copy()
-            self.offset, self.unocc_row = ctutils.find_unocc_pos(hdulist, self.wlsol)
+            self.offset, self.unocc_row = ctfs.find_unocc_pos(hdulist, self.wlsol)
             self.unocc_trace = Cutout2D(
                 self.unocc_img, 
                 position=(self.unocc_img.shape[1]/2, self.unocc_row),

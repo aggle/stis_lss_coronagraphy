@@ -5,12 +5,9 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 
-from scipy.interpolate import interp1d
-from scipy.optimize import minimize_scalar
 from astropy.io import fits
 from astropy import units
 from astropy.stats import sigma_clipped_stats
-from astropy.wcs import WCS
 
 
 def organize_files_by_header(files, ext=0, add_filepath=True, extra_kwds={}):

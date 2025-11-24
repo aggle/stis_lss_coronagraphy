@@ -10,12 +10,12 @@ from astropy.io import fits
 from astropy import units
 from astropy.wcs import WCS
 
-from coronspec_tools import utils as ctutils
-
-
 # Unocculted star finding
 from scipy import interpolate
 from scipy import optimize
+
+from coronspec_tools import utils as ctutils
+
 
 def interp_col(col):
     x = np.arange(col.size)
@@ -49,8 +49,8 @@ def interp_peak(
     img = hdulist['SCI'].data
 
     interp_rows = np.arange(star_row-20, star_row+20+1, dtype=int)
-    func = interp1d(interp_rows, -img[interp_rows, search_col], 'cubic')
-    interp_min = minimize_scalar(func, (float(interp_rows[0]), star_row, float(interp_rows[-1])))
+    func = interpolate.interp1d(interp_rows, -img[interp_rows, search_col], 'cubic')
+    interp_min = optimize.minimize_scalar(func, (float(interp_rows[0]), star_row, float(interp_rows[-1])))
     peak_row = interp_min.x
     if is_str:
         hdulist.close()
@@ -173,7 +173,7 @@ def find_star_from_wcs(
     wl_lo = wavelengths.min()
     # measure the shift in nominal vs actual position in the unocc exposure
     with fits.open(unocc_2d_file) as hdulist:
-        meas_offset = ctutils.find_unocc_pos(hdulist, wavelengths)[0]
+        meas_offset = find_unocc_pos(hdulist, wavelengths)[0]
     # apply the shift to the occulted exposure
     with fits.open(occ_2d_file) as hdulist:
         postarg2 = (hdulist[0].header['POSTARG2'] * units.arcsec).to(units.deg)
