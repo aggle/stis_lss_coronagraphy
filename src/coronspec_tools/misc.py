@@ -12,6 +12,8 @@ from astropy.stats import SigmaClip
 from photutils.centroids import centroid_2dg as centroid_func
 from scipy import ndimage
 
+img_vrange = lambda img, vmin=0.01, vmax=0.99: dict(zip(['vmin','vmax'], np.nanquantile(img, [vmin, vmax])))
+
 def get_stamp_shape(stamp : int | np.ndarray | pd.Series) -> np.ndarray:
     """
     Get the 2-d shape of a stamp given an int, array, or series
