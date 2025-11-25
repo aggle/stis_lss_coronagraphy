@@ -3,6 +3,8 @@ Tools for finding the position of the star in the occulted (or unocculted!) data
 """
 
 from pathlib import Path
+import warnings
+
 import numpy as np
 import pandas as pd
 
@@ -178,11 +180,6 @@ def find_star_from_wcs(
     with fits.open(occ_2d_file) as hdulist:
         postarg2 = (hdulist[0].header['POSTARG2'] * units.arcsec).to(units.deg)
         wcs = WCS(hdulist[1].header)
-        # occ_col, occ_row = w.world_to_pixel_values(
-        #     wl_lo, 
-        #     units.Quantity(0, unit='deg')
-        # )
-        # occ_pos = occ_row - shift
         occ_pos = wcs.world_to_pixel(
             wl_lo,
             meas_offset + postarg2

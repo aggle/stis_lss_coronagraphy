@@ -2,16 +2,21 @@
 Tools for managing an observing sequence
 """
 from pathlib import Path
+import warnings
 
 import numpy as np
 
 from astropy import units
 from astropy.io import fits
 from astropy.nddata import Cutout2D
-from astropy.wcs import WCS
+from astropy.wcs import WCS, FITSFixedWarning
+from astropy.utils.exceptions import AstropyWarning
 
 from coronspec_tools import utils as ctutils
 from coronspec_tools import find_star as ctfs
+
+# the WCS throws an warning when loading this data that we can ignore
+warnings.filterwarnings("ignore", category=FITSFixedWarning)
 
 class ObsSeq:
 
@@ -40,6 +45,7 @@ class ObsSeq:
 
         """
         self._files = {'sx1': sx1_file, 'unocc': unocc_file, 'occ': occ_file}
+        self.hdrs = {k: fits.getheader(v, 0) for k, v in self._files.items()}
         # spectral information
         with fits.open(sx1_file) as hdulist:
             table = hdulist[1].data
@@ -71,7 +77,9 @@ class ObsSeq:
                 unit=colunit
             )
         with fits.open(unocc_file) as hdulist:
-            self.unocc_wcs = WCS(hdulist[1].header)
+            with warnings.catch_warnings():
+                warnings.simplefilter('ignore', AstropyWarning)
+                self.unocc_wcs = WCS(hdulist[1].header)
             self.unocc_img = hdulist[1].data.copy()
             self.offset, self.unocc_row = ctfs.find_unocc_pos(hdulist, self.wlsol)
             self.unocc_trace = Cutout2D(
@@ -81,10 +89,29 @@ class ObsSeq:
                 wcs=self.unocc_wcs
             )
         with fits.open(occ_file) as hdulist:
-            self.occ_wcs = WCS(hdulist[1].header)
+            with warnings.catch_warnings():
+                warnings.simplefilter('ignore')
+                self.occ_wcs = WCS(hdulist[1].header)
             self.occ_img = hdulist[1].data.copy()
             (occ_col, occ_row) = ctfs.find_star_from_wcs(
                 sx1_file, unocc_file, occ_file,
             )
             self.occ_row = occ_row
+            self.occ_stamp = Cutout2D(
+                self.occ_img, 
+                position=(self.occ_img.shape[1]/2, self.occ_row),
+                size=(101, self.occ_img.shape[1]),
+                wcs=self.occ_wcs
+            )
         return None
+
+    def get_cutout(self, row_ind):
+        """Return a cutout from the occulted exposure"""
+        return Cutout2D(
+            self.occ_img, 
+            position=(self.occ_img.shape[1]/2, row_ind),
+            size=(101, self.occ_img.shape[1]),
+            wcs=self.occ_wcs
+        )
+
+
