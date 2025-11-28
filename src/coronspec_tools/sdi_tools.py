@@ -24,7 +24,7 @@ def calc_scaling(
     rescaled = wlmap.T/refwl
     return rescaled.T
 
-def align_and_scale(
+def rescale_img(
     img : np.ndarray,
     center_row : float,
     scale_factors : np.ndarray
