@@ -218,12 +218,16 @@ def make_sx2_mask(
 #     return mask
 
 def rolling_median(array, window=1):
-    median_filtered = np.empty(array.size-2*window)
-    for i in np.arange(window, array.size-window):
-        median_filtered[i-window] = np.nanmedian(array[i-window:i+window+1])
+    median_filtered = np.empty(array.size)
+    for i in np.arange(window, array.size):
+        lb, ub = i-window, i+window+1
+        lb = max([ lb, i ])
+        ub = min([ ub, array.size ])
+        median_filtered[i] = np.nanmedian(array[lb:ub])
     return median_filtered
+
 def median_filter_image(img, window=5):
-    filtered_img = np.zeros((img.shape[0], img.shape[1]-2*window)) * np.nan
+    filtered_img = np.zeros_like(img) * np.nan
     for row in np.arange(filtered_img.shape[0]):
         filtered_img[row] = rolling_median(img[row], window)
     return filtered_img
