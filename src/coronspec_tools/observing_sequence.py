@@ -51,7 +51,7 @@ class ObsSeq:
 
         """
         self._files = {'sx1': sx1_file, 'unocc': unocc_file, 'occ': occ_file}
-        self.hdrs = {k: fits.getheader(v, 0) for k, v in self._files.items()}
+        self.hdrs = {k: {h: fits.getheader(v, h) for h in [0,'sci']} for k, v in self._files.items()}
         # spectral information
         with fits.open(sx1_file) as hdulist:
             table = hdulist[1].data
