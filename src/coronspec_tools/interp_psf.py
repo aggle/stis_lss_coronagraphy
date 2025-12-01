@@ -149,8 +149,8 @@ def interpolate_by_row(
     for col in np.arange(mask_width, img.shape[1]-mask_width):
         new_mask = np.zeros_like(img, dtype=bool)
         lb, ub = col-mask_width, col+mask_width+1
-        lb = max(col, lb)
-        ub = min(img.shape[1], ub)
+        lb = max([ 0, lb ])
+        ub = min([ img.shape[1], ub ])
         new_mask[:, lb : ub] = True
         masked_img = np.stack([row[~row_mask] for row, row_mask in zip(img, new_mask)])
         # interp along the column axis
@@ -187,8 +187,8 @@ def interpolate_by_row_2d(
     for col in np.arange(row_mask, img.shape[1]):
         new_mask = np.zeros_like(img, dtype=bool)
         lb, ub = col-row_mask, col+row_mask+1
-        lb = max(col, lb)
-        ub = min(img.shape[1], ub)
+        lb = max([0, lb])
+        ub = min([ img.shape[1], ub ])
         new_mask[:, lb : ub] = True
         masked_img = np.stack([row[~row_mask] for row, row_mask in zip(img, new_mask)])
         # interp along the column axis
@@ -235,3 +235,32 @@ def interpolate_slice(
     return interp_func(all_points).reshape(img.shape)
 
     
+def calc_wl_mask(
+    y : int,
+	y0 : float,
+	ref_wl_ind : float,
+	psf_width : float
+) -> float:
+    """
+    Compute the width of the mask, along the wavelength axis, required to
+    mask out a rescaled companion PSF.
+
+    Parameters
+    ----------
+    y : int
+      the row you are interpolating
+	y0 : float
+      the central row from which the scaling is computed
+	ref_wl_ind : float
+      the index of the reference wavelength for the scaling
+	psf_width : float
+      the spatial (y) half-size of the psf
+
+    Output
+    ------
+    mask_width : float
+      the mask-width in wavelength space required to mask out the spatially-rescaled PSF
+
+    """
+    width = 2 * psf_width * ref_wl_ind / (y - y0)
+    return width
