@@ -55,42 +55,6 @@ def rescale_img(
 
 
 
-def calc_wl_mask_position(
-    y0 : float,
-    y1 : int,
-	ycen : float,
-	ref_wl_ind : float,
-	psf_width : float
-) -> tuple[float, float]:
-    """
-    Compute the center and width of the mask, along the wavelength axis, required to
-    mask out a rescaled companion PSF.
-    Returns a tuple of [mask_center, mask_width].
-    Note that the mask width does NOT depend on y0, only on y1, so you can use
-    it regardless of the value of y0.
-
-    Parameters
-    ----------
-    y0 : float
-      the location of the source in the original (unscaled) image
-    y1 : int
-      the row you are interpolating
-	ycen: float
-      the central row from which the scaling is computed
-	ref_wl_ind : float
-      the index of the reference wavelength for the scaling
-	psf_width : float
-      the spatial (y) half-size of the psf
-
-    Output
-    ------
-    mask_width : float
-      the mask-width in wavelength space required to mask out the spatially-rescaled PSF
-
-    """
-    width = 2 * psf_width * ref_wl_ind / (y1 - ycen)
-    center = ref_wl_ind * (y0-ycen) / (y1-ycen)
-    return center, width
 
 def compute_wl_mask_center(
     y : int,
@@ -122,6 +86,91 @@ def compute_wl_mask_center(
     width = 2 * psf_width * ref_wl_ind / (y - y0)
     return width
  
+def calc_scaled_psf_row(psf_row, center_row, scale_factors):
+    """
+    For a PSf centered on some row, calculate where it goes after being scaled
+    """
+    y = (psf_row-center_row)*scale_factors + center_row
+    return y
+
+def invert_scaled_psf_row(
+    scaled_rows : float | np.ndarray,
+    psf_row : int | float,
+	center_row : int | float,
+	ref_wl : float,
+	wl_pixscale : float,
+	wl0,
+) -> float | np.ndarray[float]:
+    """
+    Find the column at which a PSF located at `psf_row` in the original image
+    crossed the given rows in the scaled image.
+
+    Parameters
+    ----------
+    scaled_rows : float | np.ndarray
+      the rows in scaled space where you want to find the crossing column
+    psf_row : float
+      the row in the original image with the source
+    center_row : float
+      the center of the scaling
+    ref_wl : float
+      the reference wavelength for the scaling, converted to Angstrom
+	wl_pixscale : float
+      the pixel scale. CD1_1 in the SCI header.
+    wl0 : the wavelength of the 0th column
+
+    Output
+    ------
+    cols : float | np.ndarray
+      the columns at which the PSF crosses the rows
+    """
+    scaled_sep = scaled_rows - center_row
+    orig_sep = psf_row - center_row
+    cols = (wl_pixscale**-1) * ( ref_wl*(orig_sep/scaled_sep) - wl0 )
+    return cols
+
+def calc_wl_mask_position(
+    y0 : float,
+    y1 : int,
+	ycen : float,
+	psf_width : float,
+    wlsol : np.ndarray,
+	ref_wl_ind : float,
+    wl_pixscale : float,
+) -> tuple[float, float]:
+    """
+    Compute the center and width of the mask, along the wavelength axis, required to
+    mask out a rescaled companion PSF.
+    Returns a tuple of [mask_center, mask_width].
+    Note that the mask width does NOT depend on y0, only on y1, so you can use
+    it regardless of the value of y0.
+
+    Parameters
+    ----------
+    y0 : float
+      the location of the source in the original (unscaled) image
+    y1 : int
+      the row you are interpolating
+	ycen: float
+      the central row from which the scaling is computed
+	ref_wl_ind : float
+      the index of the reference wavelength for the scaling
+	psf_width : float
+      the spatial (y) half-size of the psf
+
+    Output
+    ------
+    mask_width : float
+      the mask-width in wavelength space required to mask out the spatially-rescaled PSF
+
+    """
+    width = 2 * psf_width * ref_wl_ind / (y1 - ycen)
+    # center = ref_wl_ind * (y0-ycen) / (y1-ycen)
+    ref_wl = wlsol[ref_wl_ind]
+    wl0 = wlsol[0]
+    center = invert_scaled_psf_row(y1, y0, ycen, ref_wl, wl_pixscale, wl0)
+    return center, width
+
 def interpolate_by_row(
         img : np.ndarray,
         mask_width : int = 3,
