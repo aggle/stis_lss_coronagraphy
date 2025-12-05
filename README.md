@@ -45,3 +45,14 @@ This repo is in a pretty disorganized state at the moment. The notebook `noteboo
     - `occ_wcs`: WCS object for the occulted observation
     - `occ_img`: 2-D spectral image of the occulted observation
     - `occ_row`: 0-indexed row coordinate corresponding to the offset in the occulted exposure, aka where the star is
+
+- `sdi_tools.py` 
+  This module contains most of the tools needed for spectral differential
+  imaging. The current strategy is to rescale the image by wavelength so that
+  the speckles go straight down the rows and an off-axis PSF follows a 1/lambda
+  curve. For each row in the scaled image, the columns at which the PSF (real or
+  hypothetical) crosses the row are masked out, and the value of the speckle is
+  replaced by interpolation to construct a model of the stellar PSF. This model
+  is then subtracted from the scaled image to produce a residual image. The
+  signal along the off-axis PSF path can be projected back onto the original,
+  descaled image to construct a residual map for every row.
