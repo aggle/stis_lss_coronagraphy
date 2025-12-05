@@ -171,39 +171,37 @@ def calc_wl_mask_position(
     center = invert_scaled_psf_row(y1, y0, ycen, ref_wl, wl_pixscale, wl0)
     return center, width
 
-def interpolate_by_row(
-        img : np.ndarray,
-        mask_width : int = 3,
-) -> np.ndarray :
+
+def descale_signal(
+        residual_img, ytest, ycen, obs, ref_wl_ind
+) -> np.ndarray:
     """
-    Interpolate an image row-by-row. For each row, mask a region off and then predict it by interpolation.
+    From a wavelength-scaled residual image, use a simple algorithm to estimate
+    the signal in unscaled space:
+
+    - Compute the position of the signal in row, col coordinates.
+    - For each column, take the two closest rows and compute their distance-weighted mean
+    - return one value for each column
 
     Parameters
     ----------
-    img : np.ndarray
-      2-D wavelength-scaled spectral image (speckles move across rows)
-    mask_width : int = 3
-      how many pixels before and after the test pixel to mask
+    define your parameters
 
     Output
     ------
-    interp_img : np.ndarray
-      the image as replaced by interpolated values
-    """
-    interp_img = np.empty_like(img)
+    Define your output
 
-    for col in np.arange(mask_width, img.shape[1]-mask_width):
-        new_mask = np.zeros_like(img, dtype=bool)
-        lb, ub = col-mask_width, col+mask_width+1
-        lb = max([ 0, lb ])
-        ub = min([ img.shape[1], ub ])
-        new_mask[:, lb : ub] = True
-        masked_img = np.stack([row[~row_mask] for row, row_mask in zip(img, new_mask)])
-        # interp along the column axis
-        interp_row = interpolate.CubicSpline(
-            np.arange(img.shape[1])[~new_mask[0]],
-            masked_img, 
-            axis=1
-        )
-        interp_img[:, col] = interp_row(col)
-    return interp_img
+    """
+    cols = np.arange(residual_img.shape[1])
+    scale_factors = obs.wlsol[ref_wl_ind] / obs.wlsol
+    signal_rows = calc_scaled_psf_row(ytest, ycen, scale_factors)
+    signal = np.zeros_like(cols)*np.nan
+    for c in cols:
+        r = signal_rows[c]
+        r_lo, r_hi = [f(r).astype(int) for f in (np.floor, np.ceil)]
+        weights = np.abs(r-r_lo)**-2, np.abs(r_hi-r)**-2
+        signal[c] = residual_img[[r_lo,r_hi], c]*weights / np.sum(weights)
+    return signal
+
+
+
