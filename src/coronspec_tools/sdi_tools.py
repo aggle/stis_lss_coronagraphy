@@ -173,7 +173,11 @@ def calc_wl_mask_position(
 
 
 def descale_signal(
-        residual_img, ytest, ycen, obs, ref_wl_ind
+    residual_img : np.ndarray,
+	ytest : float,
+	ycen : float,
+	wlsol : np.ndarray,
+	ref_wl_ind : int,
 ) -> np.ndarray:
     """
     From a wavelength-scaled residual image, use a simple algorithm to estimate
@@ -185,15 +189,25 @@ def descale_signal(
 
     Parameters
     ----------
-    define your parameters
+    residual_image : np.ndarray
+      the psf-subtracted residual in scaled space
+	ytest : float
+      the unscaled row you are testing for the presence of a PSF
+	ycen : float
+      the reference row position for scaling
+	wlsol : np.ndarray
+      the wavelength solution
+	ref_wl_ind : int
+      the reference wavelength for scaling
 
     Output
     ------
-    Define your output
+    signal : np.ndarray
+      1-d row corresponding to the inferred signal in the unscaled row
 
     """
     cols = np.arange(residual_img.shape[1])
-    scale_factors = obs.wlsol[ref_wl_ind] / obs.wlsol
+    scale_factors = wlsol[ref_wl_ind] / wlsol
     signal_rows = calc_scaled_psf_row(ytest, ycen, scale_factors)
     signal = np.zeros_like(cols)*np.nan
     for c in cols:
