@@ -1,7 +1,10 @@
 import numpy as np
 from scipy import ndimage
 from scipy import interpolate
-import pyklip
+
+from astropy import units
+
+from coronspec_tools import observing_sequence
 
 def calc_scaling(
         wlmap, refwv_ind : int = 500
@@ -176,8 +179,7 @@ def descale_signal(
     residual_img : np.ndarray,
 	ytest : float,
 	ycen : float,
-	wlsol : np.ndarray,
-	ref_wl_ind : int,
+    wl_scaling : np.ndarray,
 ) -> np.ndarray:
     """
     From a wavelength-scaled residual image, use a simple algorithm to estimate
@@ -195,10 +197,8 @@ def descale_signal(
       the unscaled row you are testing for the presence of a PSF
 	ycen : float
       the reference row position for scaling
-	wlsol : np.ndarray
-      the wavelength solution
-	ref_wl_ind : int
-      the reference wavelength for scaling
+    wl_scaling : np.ndarray
+      wlsol[ref_wl]/wlsol
 
     Output
     ------
@@ -207,15 +207,73 @@ def descale_signal(
 
     """
     cols = np.arange(residual_img.shape[1])
-    scale_factors = wlsol[ref_wl_ind] / wlsol
-    signal_rows = calc_scaled_psf_row(ytest, ycen, scale_factors)
+    signal_rows = calc_scaled_psf_row(ytest, ycen, wl_scaling)
     signal = np.zeros_like(cols)*np.nan
     for c in cols:
         r = signal_rows[c]
         r_lo, r_hi = [f(r).astype(int) for f in (np.floor, np.ceil)]
         weights = np.abs(r-r_lo)**-2, np.abs(r_hi-r)**-2
-        signal[c] = residual_img[[r_lo,r_hi], c]*weights / np.sum(weights)
+        signal[c] = np.sum(residual_img[[r_lo,r_hi], c]*weights) / np.sum(weights)
     return signal
 
 
+def model_and_subtract_target(
+    scaled_img : np.ndarray,
+    obs : observing_sequence.ObsSeq,
+    y_test : int,
+    y_ref : float,
+    wl_ref_ind : int,
+    psf_width : float = 5.
+) -> np.ndarray :
+    """
+    Perform PSF interpolation and subtraction for a hypothetical source located
+    at y_test, and return the residual.
 
+    Parameters
+    ----------
+    scaled_img : np.ndarray
+      the wavelength-scaled image
+    obs : observing_sequence.ObsSeq
+      the ObsSeq object carrying the observation-related information
+    y_test : float
+      the position of a hypothetical source, in pixels, along the spatial axis of the provided image
+    y_ref : float
+      the reference position for the wavelength scaling
+    wl_ref_ind : int
+      the reference wavelength index for wavelength scaling
+    psf_width : float = 5.
+      the full width of the PSF along the spatial axis, used for masking
+
+    Output
+    ------
+    residual : np.ndarray
+      the result of scaled_img - psf_model
+
+    """
+    col_inds = np.arange(scaled_img.shape[1])
+    psf_model = scaled_img.copy()
+    scale_factors = obs.wlsol[wl_ref_ind]/obs.wlsol
+    scaled_rows = calc_scaled_psf_row(y_test, y_ref, scale_factors)
+    unique_rows = np.arange(np.floor(scaled_rows.min()), np.ceil(scaled_rows.max()), dtype=int)
+    for row_ind in unique_rows:
+        # compute the center and width of a scaled PSF projected across a row
+        mask_center, mask_width = calc_wl_mask_position(
+            y_test,
+            row_ind, 
+            y_ref, 
+            psf_width, 
+            obs.wlsol.to(units.Angstrom).value, 
+            wl_ref_ind, 
+            obs.hdrs['occ']['sci']['CD1_1']
+        )
+        mask_range = np.round([mask_center-mask_width/2, mask_center+mask_width/2]).astype(int)
+        mask = np.zeros(scaled_img.shape[1]).astype(bool)
+        mask[mask_range[0]:mask_range[1]] = True 
+        masked_row = np.ma.masked_array(scaled_img[row_ind], mask=mask)
+        interp_row = interpolate.Akima1DInterpolator(
+                col_inds[~masked_row.mask],
+                masked_row[~masked_row.mask], 
+            )(col_inds)
+        psf_model[row_ind] = interp_row
+    residual = scaled_img - psf_model
+    return residual
