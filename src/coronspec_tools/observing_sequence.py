@@ -59,9 +59,47 @@ class ObsSeq:
 
         """
         self._files = {'sx1': sx1_file, 'unocc': unocc_file, 'occ': occ_file}
-        self.hdrs = {k: {h: fits.getheader(v, h) for h in [0,'sci']} for k, v in self._files.items()}
+        self.hdrs = {
+            k: {h: fits.getheader(v, h) for h in [0,'sci']}
+            for k, v in self._files.items()
+        }
+        # pull data out of the files
         # spectral information
-        with fits.open(sx1_file) as hdulist:
+        self.process_specfile(sx1_file)
+        # unocculted
+        self.process_unocculted(unocc_file, trace_width)
+        # unocculted
+        self.process_occulted(occ_file)
+
+        # process data
+        (occ_col, occ_row) = ctfs.find_star_from_wcs(
+            sx1_file, unocc_file, occ_file,
+        )
+        self.occ_row = occ_row
+        self.occ_stamp = Cutout2D(
+            self.occ_img, 
+            position=(self.occ_img.shape[1]/2, self.occ_row),
+            size=(occ_stamp_width, self.occ_img.shape[1]),
+            wcs=self.occ_wcs
+        )
+        self.occ_stamp_center = self.occ_row - self.occ_stamp.origin_original[1]
+        # data cleaning
+        if median_clean > 0:
+            specunit = self.primary_spectrum.unit
+            self.primary_spectrum = ctutils.rolling_median(
+                self.primary_spectrum.value, 10
+            ) * specunit
+            self.primary_spectrum_unc = ctutils.rolling_median(
+                self.primary_spectrum_unc.value, 10
+            ) * specunit
+            self.occ_stamp.data = self.clean_stamp(self.occ_stamp.data, 10)
+        if contrast:
+            # convert to units of contrast
+            self.convert_to_contrast()
+        return None
+
+    def process_specfile(self, specfile):
+        with fits.open(specfile) as hdulist:
             table = hdulist[1].data
             colname = 'WAVELENGTH'
             colind = table.names.index(colname)+1
@@ -90,34 +128,45 @@ class ObsSeq:
                 np.squeeze(table[colname]),
                 unit=colunit
             )
+            colname = 'FLUX'
+            colind = table.names.index(colname)+1
+            colunit = hdulist[1].header[f'TUNIT{colind}']
+            if 'Counts' in colunit:
+                colunit = colunit.replace("Counts",'count')
+            self.primary_spectrum_flux = units.Quantity(
+                np.squeeze(table[colname]),
+                unit=colunit
+            )
+            colname = 'ERROR'
+            colind = table.names.index(colname)+1
+            colunit = hdulist[1].header[f'TUNIT{colind}']
+            if 'Counts' in colunit:
+                colunit = colunit.replace("Counts",'count')
+            self.primary_spectrum_flux_unc = units.Quantity(
+                np.squeeze(table[colname]),
+                unit=colunit
+            )
+        return
+
+    def process_unocculted(self, unocc_file, trace_width):
+        # measure the TA offset
+        # get the wcs and unocculted image
         with fits.open(unocc_file) as hdulist:
             with warnings.catch_warnings():
                 warnings.simplefilter('ignore', AstropyWarning)
                 self.unocc_wcs = WCS(hdulist[1].header)
             self.unocc_img = hdulist[1].data.copy()
             self.offset, self.unocc_row = ctfs.find_unocc_pos(hdulist, self.wlsol)
-            self.unocc_trace = Cutout2D(
-                self.unocc_img, 
-                position=(self.unocc_img.shape[1]/2, self.unocc_row),
-                size=(trace_width, self.unocc_img.shape[1]),
-                wcs=self.unocc_wcs
-            )
+        self.unocc_trace = self.get_unocc_trace(trace_width)
+        return
+
+    def process_occulted(self, occ_file):
+        # get the wcs and occulted image
         with fits.open(occ_file) as hdulist:
             with warnings.catch_warnings():
                 warnings.simplefilter('ignore')
                 self.occ_wcs = WCS(hdulist[1].header)
             self.occ_img = hdulist[1].data.copy()
-            (occ_col, occ_row) = ctfs.find_star_from_wcs(
-                sx1_file, unocc_file, occ_file,
-            )
-            self.occ_row = occ_row
-            self.occ_stamp = Cutout2D(
-                self.occ_img, 
-                position=(self.occ_img.shape[1]/2, self.occ_row),
-                size=(occ_stamp_width, self.occ_img.shape[1]),
-                wcs=self.occ_wcs
-            )
-        return None
 
     def get_cutout(self, row_ind):
         """Return a cutout from the occulted exposure"""
@@ -133,3 +182,23 @@ class ObsSeq:
         return ctutils.median_filter_image(img, width)
 
 
+    def get_unocc_trace(self, trace_width):
+        trace = Cutout2D(
+            self.unocc_img, 
+            position=(self.unocc_img.shape[1]/2, self.unocc_row),
+            size=(trace_width, self.unocc_img.shape[1]),
+            wcs=self.unocc_wcs
+        )
+        return trace
+
+    def convert_to_contrast(self):
+        """Converts all relevant data to units of contrast"""
+        exptime = self.hdrs['unocc']['sci']['exptime']
+        self.unocc_img = self.unocc_img / exptime
+        self.unocc_img = self.unocc_img / self.primary_spectrum.value
+        self.unocc_trace.data = self.unocc_trace.data / self.primary_spectrum.value
+        exptime = self.hdrs['occ']['sci']['exptime']
+        self.occ_img = self.occ_img / exptime
+        self.occ_img = self.occ_img / self.primary_spectrum.value
+        self.occ_stamp.data = self.occ_stamp.data / self.primary_spectrum.value
+        return
