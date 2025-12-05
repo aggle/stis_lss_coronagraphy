@@ -6,28 +6,6 @@ from astropy import units
 
 from coronspec_tools import observing_sequence
 
-def calc_scaling(
-        wlmap, refwv_ind : int = 500
-) -> np.ndarray:
-    """
-    compute the rescaling factors for each wavelength slice
-
-    Parameters
-    ----------
-    wlmap : np.ndarray
-      2-D map the same size as the image, with the wavelength corresponding to
-      each pixel
-    refwv_ind : int = 500
-
-    Output
-    ------
-    Define your output
-
-    """
-    refwl = wlmap[:, refwv_ind]
-    rescaled = wlmap.T/refwl
-    return rescaled.T
-
 def rescale_img(
     img : np.ndarray,
     center_row : float,
@@ -44,6 +22,7 @@ def rescale_img(
       the position of the star in the image
     scale_factors : np.ndarray
       how much to scale each position. essentially, the wavelength solution normalized to some index.
+      wlsol[ref_wl]/wlsol
 
     Output
     ------
@@ -55,8 +34,6 @@ def rescale_img(
     new_rows = (row_sep * scale_factors) + center_row
     scaled_img = ndimage.map_coordinates(img.copy(), [new_rows, col_coords], mode='nearest')
     return scaled_img
-
-
 
 
 def compute_wl_mask_center(
@@ -182,8 +159,8 @@ def descale_signal(
     wl_scaling : np.ndarray,
 ) -> np.ndarray:
     """
-    From a wavelength-scaled residual image, use a simple algorithm to estimate
-    the signal in unscaled space:
+    From a wavelength-scaled residual image, use a simple algorithm to project the signal from an off-axis PSF back
+    into unscaled space:
 
     - Compute the position of the signal in row, col coordinates.
     - For each column, take the two closest rows and compute their distance-weighted mean

@@ -182,41 +182,6 @@ def make_sx2_mask(
     return mask
 
 
-# def clean_image(
-
-#         img : np.ndarray,
-#         window_size : int = 3,
-# ) -> np.ndarray :
-#     """
-#     Identify outliers and mask them
-
-#     Parameters
-#     ----------
-#     img : np.ndarray
-#       2-d image
-#     window_size : int = 3,
-#       box of radius 2*window_size + 1
-
-#     Output
-#     ------
-#     masked_img
-#       Return an image 
-
-#     """
-#     mask = np.zeros_like(img, dtype=bool)
-#     ygrid, xgrid = np.mgrid[:img.shape[0], :img.shape[1]]
-#     for y, x in zip(ygrid.ravel(), xgrid.ravel()):
-#         ylo = max(0, y-window_size)
-#         yhi = min(y+window_size+1, img.shape[0])
-#         xlo = max(0, x-window_size)
-#         xhi = min(x+window_size+1, img.shape[1])
-#         window = img[ylo:yhi,xlo:xhi]
-#         # sigma = sigma_clipped_stats(window)[-1]
-#         sigma = np.nanstd(window)
-#         if img[y, x] > 5*sigma:
-#             mask[y, x] = True
-#     return mask
-
 def rolling_median(array, window=1):
     median_filtered = np.zeros(array.size)
     for i in np.arange(window, array.size):

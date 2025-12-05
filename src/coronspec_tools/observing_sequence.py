@@ -27,6 +27,8 @@ class ObsSeq:
             occ_file : str | Path,
             trace_width : int = 11,
             occ_stamp_width : int = 61,
+            contrast : bool = True,
+            median_clean : int = 10
     ) -> None :
         """
         Instantiate a class to manage injection of spectral traces into 2-D
@@ -44,6 +46,12 @@ class ObsSeq:
           the width of the trace image to cut out, for PSF injection
         occ_stamp_width : int = 61
           the width of the occulted image to cut out for PSF subtraction
+        contrast : bool = True
+          if True, convert the occ and unocc images to counts/sec, and divide
+          by the primary unocculted spectrum
+        median_clean : int = 10
+          Apply a rolling median along the wavelength axis with this width to
+          clean the data. If >= 0, not applied.
 
         Output
         ------
@@ -119,5 +127,9 @@ class ObsSeq:
             size=(101, self.occ_img.shape[1]),
             wcs=self.occ_wcs
         )
+
+    def clean_stamp(self, img, width=10):
+        """Apply median filtering to a 2-D spectral image"""
+        return ctutils.median_filter_image(img, width)
 
 
