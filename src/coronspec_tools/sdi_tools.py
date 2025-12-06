@@ -3,6 +3,7 @@ from scipy import ndimage
 from scipy import interpolate
 
 from astropy import units
+from astropy.wcs import WCS
 
 from coronspec_tools import observing_sequence
 
@@ -21,8 +22,9 @@ def rescale_img(
     center_row : float
       the position of the star in the image
     scale_factors : np.ndarray
-      how much to scale each position. essentially, the wavelength solution normalized to some index.
-      wlsol[ref_wl]/wlsol
+      how much to scale each position. essentially, the wavelength solution
+      normalized to some index.
+      defined with the convention wlsol[ref_wl]/wlsol
 
     Output
     ------
@@ -32,9 +34,50 @@ def rescale_img(
     row_coords, col_coords = np.mgrid[:img.shape[0], :img.shape[1]]
     row_sep = row_coords - center_row
     new_rows = (row_sep * scale_factors) + center_row
-    scaled_img = ndimage.map_coordinates(img.copy(), [new_rows, col_coords], mode='nearest')
+    scaled_img = ndimage.map_coordinates(
+        img.copy(), [new_rows, col_coords], mode='nearest'
+    )
     return scaled_img
 
+def rescale_img_with_wcs(
+    img : np.ndarray,
+    wcs : WCS,
+    star_sep : units.Quantity,
+    scale_factors : np.ndarray
+) -> np.ndarray:
+    """
+    compute the rescaling factors for each wavelength slice
+
+    Parameters
+    ----------
+    img : np.ndarray
+      2-D spectral image. Rows are separation, Cols are wavelength
+    wcs : astropy.wcs.WCS
+      the wcs corresponding to the image
+    star_sep : units.Quantity[deg]
+      the position of the target along the spatial axis
+    scale_factors : np.ndarray
+      how much to scale each position. essentially, the wavelength solution
+      normalized to some index.
+      defined using the convention wlsol[ref_wl]/wlsol
+
+    Output
+    ------
+    scaled_img : np.ndarray
+      the image rescale to some wavelength index
+    """
+    # convert the pixels to wavelength and separation
+    rows, cols = np.mgrid[:img.shape[0], :img.shape[1]]
+    wls, seps = wcs.pixel_to_world(cols, rows)
+    seps -= star_sep
+    # scale the separations and convert the scaled separations back to pixels
+    scaled_seps = seps / scale_factors
+    scaled_cols, scaled_rows = wcs.world_to_pixel(wls, scaled_seps)
+
+    scaled_img = ndimage.map_coordinates(
+        img.copy(), [scaled_rows, scaled_cols], mode='nearest'
+    )
+    return scaled_img
 
 def compute_wl_mask_center(
     y : int,
@@ -152,7 +195,7 @@ def calc_wl_mask_position(
     return center, width
 
 
-def descale_signal(
+def deproject_signal(
     residual_img : np.ndarray,
 	ytest : float,
 	ycen : float,
@@ -192,6 +235,66 @@ def descale_signal(
         weights = np.abs(r-r_lo)**-2, np.abs(r_hi-r)**-2
         signal[c] = np.sum(residual_img[[r_lo,r_hi], c]*weights) / np.sum(weights)
     return signal
+
+def construct_psf_model(
+    scaled_img : np.ndarray,
+    obs : observing_sequence.ObsSeq,
+    y_test : int,
+    y_ref : float,
+    wl_ref_ind : int,
+    psf_width : float = 5.
+) -> np.ndarray :
+    """
+    Perform PSF interpolation and subtraction for a hypothetical source located
+    at y_test, and return the residual.
+
+    Parameters
+    ----------
+    scaled_img : np.ndarray
+      the wavelength-scaled image
+    obs : observing_sequence.ObsSeq
+      the ObsSeq object carrying the observation-related information
+    y_test : float
+      the position of a hypothetical source, in pixels, along the spatial axis of the provided image
+    y_ref : float
+      the reference position for the wavelength scaling
+    wl_ref_ind : int
+      the reference wavelength index for wavelength scaling
+    psf_width : float = 5.
+      the full width of the PSF along the spatial axis, used for masking
+
+    Output
+    ------
+    residual : np.ndarray
+      the result of scaled_img - psf_model
+
+    """
+    col_inds = np.arange(scaled_img.shape[1])
+    psf_model = scaled_img.copy()
+    scale_factors = obs.wlsol[wl_ref_ind]/obs.wlsol
+    scaled_rows = calc_scaled_psf_row(y_test, y_ref, scale_factors)
+    unique_rows = np.arange(np.floor(scaled_rows.min()), np.ceil(scaled_rows.max()), dtype=int)
+    for row_ind in unique_rows:
+        # compute the center and width of a scaled PSF projected across a row
+        mask_center, mask_width = calc_wl_mask_position(
+            y_test,
+            row_ind, 
+            y_ref, 
+            psf_width, 
+            obs.wlsol.to(units.Angstrom).value, 
+            wl_ref_ind, 
+            obs.hdrs['occ']['sci']['CD1_1']
+        )
+        mask_range = np.round([mask_center-mask_width/2, mask_center+mask_width/2]).astype(int)
+        mask = np.zeros(scaled_img.shape[1]).astype(bool)
+        mask[mask_range[0]:mask_range[1]] = True 
+        masked_row = np.ma.masked_array(scaled_img[row_ind], mask=mask)
+        interp_row = interpolate.Akima1DInterpolator(
+                col_inds[~masked_row.mask],
+                masked_row[~masked_row.mask], 
+            )(col_inds)
+        psf_model[row_ind] = interp_row
+    return psf_model
 
 
 def model_and_subtract_target(

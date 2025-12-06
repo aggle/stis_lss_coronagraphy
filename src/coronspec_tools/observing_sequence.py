@@ -76,6 +76,9 @@ class ObsSeq:
             sx1_file, unocc_file, occ_file,
         )
         self.occ_row = occ_row
+        self.occ_sep = self.occ_wcs.pixel_to_world(
+            0, self.occ_row
+        )[1]
         self.occ_stamp = Cutout2D(
             self.occ_img, 
             position=(self.occ_img.shape[1]/2, self.occ_row),
