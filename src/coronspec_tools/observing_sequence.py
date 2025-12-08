@@ -83,12 +83,12 @@ class ObsSeq:
         # data cleaning
         if median_clean > 0:
             specunit = self.primary_spectrum.unit
-            self.primary_spectrum = ctutils.rolling_median(
-                self.primary_spectrum.value, 10
-            ) * specunit
-            self.primary_spectrum_unc = ctutils.rolling_median(
-                self.primary_spectrum_unc.value, 10
-            ) * specunit
+            # self.primary_spectrum = ctutils.rolling_median(
+            #     self.primary_spectrum.value, 10
+            # ) * specunit
+            # self.primary_spectrum_unc = ctutils.rolling_median(
+            #     self.primary_spectrum_unc.value, 10
+            # ) * specunit
             self.occ_stamp.data = self.clean_stamp(self.occ_stamp.data, 10)
         if contrast:
             # convert to units of contrast
