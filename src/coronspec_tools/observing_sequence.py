@@ -27,8 +27,8 @@ class ObsSeq:
             occ_file : str | Path,
             trace_width : int = 11,
             occ_stamp_width : int = 61,
-            contrast : bool = True,
-            median_clean : int = 10
+            median_clean : int = 10,
+            contrast : bool = False,
     ) -> None :
         """
         Instantiate a class to manage injection of spectral traces into 2-D
@@ -46,12 +46,12 @@ class ObsSeq:
           the width of the trace image to cut out, for PSF injection
         occ_stamp_width : int = 61
           the width of the occulted image to cut out for PSF subtraction
-        contrast : bool = True
-          if True, convert the occ and unocc images to counts/sec, and divide
-          by the primary unocculted spectrum
         median_clean : int = 10
           Apply a rolling median along the wavelength axis with this width to
           clean the data. If >= 0, not applied.
+        contrast : bool = False
+          if True, convert the occ and unocc images to counts/sec, and divide
+          by the primary unocculted spectrum
 
         Output
         ------
@@ -79,13 +79,7 @@ class ObsSeq:
         self.occ_sep = self.occ_wcs.pixel_to_world(
             0, self.occ_row
         )[1]
-        self.occ_stamp = Cutout2D(
-            self.occ_img, 
-            position=(self.occ_img.shape[1]/2, self.occ_row),
-            size=(occ_stamp_width, self.occ_img.shape[1]),
-            wcs=self.occ_wcs
-        )
-        self.occ_stamp_center = self.occ_row - self.occ_stamp.origin_original[1]
+        self.make_occ_stamp(occ_stamp_width)
         # data cleaning
         if median_clean > 0:
             specunit = self.primary_spectrum.unit
@@ -100,6 +94,17 @@ class ObsSeq:
             # convert to units of contrast
             self.convert_to_contrast()
         return None
+
+    def make_occ_stamp(self, width):
+        # make the occulted stamp and record the center row
+        self.occ_stamp = Cutout2D(
+            self.occ_img, 
+            position=(self.occ_img.shape[1]/2, self.occ_row),
+            size=(width, self.occ_img.shape[1]),
+            wcs=self.occ_wcs
+        )
+        self.occ_stamp_center = self.occ_row - self.occ_stamp.origin_original[1]
+
 
     def process_specfile(self, specfile):
         with fits.open(specfile) as hdulist:
