@@ -139,6 +139,45 @@ def invert_scaled_psf_row(
     cols = (wl_pixscale**-1) * ( ref_wl*(orig_sep/scaled_sep) - wl0 )
     return cols
 
+def compute_mask_halfwidth(
+    y1 : int,
+	ycen : float,
+	psf_halfwidth : float,
+    wlsol : np.ndarray,
+	ref_wl_ind : float,
+    wl_pixscale : float,
+) -> tuple[float, float]:
+    """
+    Compute the center and width of the mask, along the wavelength axis, required to
+    mask out a rescaled companion PSF.
+    Returns a tuple of [mask_center, mask_width].
+    Note that the mask width does NOT depend on y0, only on y1, so you can use
+    it regardless of the value of y0.
+
+    Parameters
+    ----------
+    y1 : int
+      the row you are interpolating
+	ycen: float
+      the central row from which the scaling is computed
+	psf_halfwidth : float
+      the spatial (y) half-size of the psf
+    wlsol : np.ndarray
+      unitless wavelength solution, in Angstrom
+	ref_wl_ind : float
+      the index of the reference wavelength for the scaling
+    wl_pixscale : float
+      how many wavelengths per pixel in the row axis
+
+    Output
+    ------
+    half_width : float
+      the half-width in columns required to mask out the spatially-rescaled PSF
+
+    """
+    half_width = wlsol.min()/wl_pixscale * psf_halfwidth / np.abs(y1-ycen)
+    return half_width
+
 def calc_wl_mask_position(
     y0 : float,
     y1 : int,
@@ -180,13 +219,13 @@ def calc_wl_mask_position(
     """
     if ref_wl_ind < 0:
         ref_wl_ind = np.arange(wlsol.size)[ref_wl_ind]
-    # width = 2 * psf_width * ref_wl_ind / (y1 - ycen)
-    width = wlsol.min()/wl_pixscale * 2*psf_halfwidth / (y1-ycen)
-    # center = ref_wl_ind * (y0-ycen) / (y1-ycen)
+    # compute the center
     ref_wl = wlsol[ref_wl_ind]
     wl0 = wlsol[0]
     center = invert_scaled_psf_row(y1, y0, ycen, ref_wl, wl_pixscale, wl0)
-    return center, width
+    # compute the width
+    width = compute_mask_halfwidth(y1, ycen, psf_halfwidth, wlsol, ref_wl_ind, wl_pixscale)
+    return center, 2*width
 
 
 def descale_signal(
@@ -380,6 +419,24 @@ def make_row_mask(npix, center, width):
         mask[mask_range[0]:mask_range[1]] = True
     return mask
 
+def mask_range_to_bool(mask_range : tuple[float, float], row_size : int):
+    """
+    Convert a mask range into a boolean array
+    mask_range : tuple[float]
+      tuple of (lower bound, upper bound)
+    Output
+    ------
+    mask : np.array
+      a boolean array of row_size
+    """
+    # make a mask that is everywhere False
+    mask = np.zeros(row_size, dtype=bool)
+    # now fill the masked region with True
+    mask_lb, mask_ub = mask_range 
+    mask_lb = np.floor(max([0, mask_lb])).astype(int)
+    mask_ub = np.ceil(min([mask_ub, row_size])).astype(int)
+    mask[mask_lb:mask_ub] = True
+    return mask
 
 def fit_under_psf(
         col_inds : np.ndarray,
@@ -430,3 +487,153 @@ def fit_under_psf(
     # psf_model = data.copy()
     # psf_model[mask] = poly2(np.arange(mask_lb, mask_ub))
     return psf_model
+
+
+class SDI:
+    def __init__(self, obs: observing_sequence.ObsSeq, psf_halfwidth=5):
+        """
+        A class that helps with SDI operations. Using a class is helpful
+        because you can track information like the reference wavelength
+        """
+        self.obs = obs
+        self.wl_pixscale = obs.hdrs['occ']['sci']['CD1_1']
+        self.ref_wl_ind = len(obs.wlsol)-1
+        self.scale_factors = self.obs.wlsol[self.ref_wl_ind]/self.obs.wlsol
+        self.scaled_stamp = np.zeros_like(obs.occ_stamp.data)
+        self.psf_halfwidth = psf_halfwidth
+
+    def compute_scaled_stamp(self, ref_wl_ind, stamp, stamp_center):
+        scale_factors = self.obs.wlsol[ref_wl_ind]/self.obs.wlsol
+        scaled_stamp = rescale_img(
+            stamp,
+            stamp_center,
+            scale_factors
+        )
+        self.scaled_stamp = scaled_stamp
+        self.ref_wl_ind = ref_wl_ind
+        self.scale_factors = scale_factors
+
+    def subtract_target_model(self, target_row_ind, psf_halfwidth = None):
+        if psf_halfwidth is None:
+            psf_halfwidth = self.psf_halfwidth
+        y = compute_scaled_psf_trace(
+            target_row_ind, 
+            self.obs.occ_stamp_center,
+            self.scale_factors
+        )
+        trace_rows = np.arange(np.floor(y.min()), np.ceil(y.max())+1, dtype=int)
+        scaled_region = self.scaled_stamp[trace_rows]
+        psf_model = self.model_target_row(target_row_ind, psf_halfwidth)
+        return scaled_region - psf_model
+
+    def descale_residual_flux(self, residual_img, y_vals):
+        """
+        y_vals : np.ndarray
+          the y value in each column for which to estimate the signal
+        """
+        cols = np.arange(residual_img.shape[1])
+        signal = np.zeros_like(cols)*np.nan
+        for c in cols:
+            r = y_vals[c]
+            r_lo, r_hi = [f(r).astype(int) for f in (np.floor, np.ceil)]
+            weights = np.abs(r-r_lo)**-2, np.abs(r_hi-r)**-2
+            signal[c] = np.sum(residual_img[[r_lo,r_hi], c]*weights) / np.sum(weights)
+        return signal
+
+    def model_target_row(self, target_row_ind, psf_halfwidth = None):
+        """
+        Generate a model for the given row of an unscaled stamp
+
+        Parameters
+        ----------
+        target_row_ind : float
+          the position of the *unscaled* stamp at which you wish to model the primary PSF
+
+        Output
+        ------
+        psf_model : np.ndarray
+          the model of the speckle field, in scaled space
+        """
+        if psf_halfwidth is None:
+            psf_halfwidth = self.psf_halfwidth
+        x = np.arange(self.scaled_stamp.shape[1])
+        y = compute_scaled_psf_trace(
+            target_row_ind, 
+            self.obs.occ_stamp_center,
+            self.scale_factors
+        )
+        trace_rows = np.arange(np.floor(y.min()), np.ceil(y.max())+1, dtype=int)
+        psf_model = np.zeros((trace_rows.size, x.size))
+        for i, scaled_row_ind in enumerate(trace_rows):
+            model_row = self.model_scaled_row(target_row_ind, scaled_row_ind, psf_halfwidth)
+            psf_model[i] = model_row
+        return psf_model
+
+
+    def model_scaled_row(self, target_row_ind : int, scaled_row_ind : int, psf_halfwidth = None):
+        """Model the PSF under the hypothetical companion from a target row, at a single scaled row"""
+        if psf_halfwidth is None:
+            psf_halfwidth = self.psf_halfwidth
+        # compute the mask
+        mask_range = self.compute_row_mask(target_row_ind, scaled_row_ind, psf_halfwidth)
+        mask = mask_range_to_bool(mask_range, self.obs.wlsol.size)
+        # model the row
+        scaled_row = self.scaled_stamp[scaled_row_ind]
+        masked_row = np.ma.masked_array(scaled_row, mask)
+        psf_model = self.fit_masked_data(masked_row)
+        return psf_model
+
+    def compute_row_mask(self, target_row, scaled_row, psf_halfwidth=5):
+        """
+        For a given target row and scaled row, return lower and upper bounds of
+        the masked region in columns
+        """
+        wlsol = self.obs.wlsol.to("Angstrom").value
+        center = invert_scaled_psf_row(
+            scaled_row,
+            target_row,
+            self.obs.occ_stamp_center,
+            wlsol[self.ref_wl_ind],
+            self.wl_pixscale,
+            wlsol.min()
+        )
+        mask_halfwidth = compute_mask_halfwidth(
+            y1 = scaled_row,
+            ycen = self.obs.occ_stamp_center,
+            psf_halfwidth = psf_halfwidth,
+            wlsol = wlsol,
+            ref_wl_ind = self.ref_wl_ind,
+            wl_pixscale = self.wl_pixscale,
+        )/2
+        mask_lb, mask_ub = center - mask_halfwidth, center + mask_halfwidth
+        return mask_lb, mask_ub
+
+    def fit_masked_data(self, masked_row):
+        """
+        Replace the masked data in the row with some function
+        """
+        psf_model = masked_row.data.copy()
+        col_inds = np.arange(masked_row.size)
+        mask = masked_row.mask
+        if col_inds[~mask].size == 0:
+            # everything is maskde
+            psf_model = masked_row.data * np.nan
+        elif col_inds[mask].size == col_inds.size:
+            # nothing is masked
+            psf_model = masked_row.data
+        else:
+            # psf_model_func = interpolate.Akima1DInterpolator(
+            #     col_inds[~mask],
+            #     masked_row[~mask],
+            # )
+            lb, ub = np.where(mask)[0][[0, -1]]
+            lb_range = [max([lb - 20, 0]), lb]
+            ub_range = [ub, min([col_inds.size, ub+20])]
+            fit_pix = np.concatenate([
+                col_inds[lb_range[0]:lb_range[1]],
+                col_inds[ub_range[0]:ub_range[1]]
+            ])
+            psf_model_func = np.polynomial.Polynomial.fit(fit_pix, masked_row[fit_pix], 1)
+
+            psf_model[mask] = psf_model_func(np.where(masked_row.mask)[0])
+        return psf_model
