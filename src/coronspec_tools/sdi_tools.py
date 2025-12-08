@@ -629,9 +629,10 @@ class SDI:
             #     col_inds[~mask],
             #     masked_row[~mask],
             # )
+            buffer = 50 # how many columns to include in the fit
             lb, ub = np.where(mask)[0][[0, -1]]
-            lb_range = [max([lb - 20, 0]), lb]
-            ub_range = [ub, min([col_inds.size, ub+20])]
+            lb_range = [max([lb - buffer, 0]), lb]
+            ub_range = [ub, min([col_inds.size, ub+buffer])]
             fit_pix = np.concatenate([
                 col_inds[lb_range[0]:lb_range[1]],
                 col_inds[ub_range[0]:ub_range[1]]
