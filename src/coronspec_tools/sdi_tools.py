@@ -33,7 +33,7 @@ def rescale_img(
     """
     row_coords, col_coords = np.mgrid[:img.shape[0], :img.shape[1]]
     row_sep = row_coords - center_row
-    new_rows = (row_sep * scale_factors) + center_row
+    new_rows = (row_sep / scale_factors) + center_row
     scaled_img = ndimage.map_coordinates(
         img.copy(), [new_rows, col_coords], mode='nearest'
     )
@@ -79,39 +79,26 @@ def rescale_img_with_wcs(
     )
     return scaled_img
 
-def compute_wl_mask_center(
-    y : int,
-	y0 : float,
-	ref_wl_ind : float,
-	psf_width : float
-) -> float:
+def compute_scaled_psf_trace_wcs(
+    sep : units.Quantity,
+    wcs : WCS,
+    wlsol : units.Quantity,
+    ref_wl_ind : int,
+):
     """
-    Compute the width of the mask, along the wavelength axis, required to
-    mask out a rescaled companion PSF.
-
-    Parameters
-    ----------
-    y : int
-      the row you are interpolating
-	y0 : float
-      the central row from which the scaling is computed
-	ref_wl_ind : float
-      the index of the reference wavelength for the scaling
-	psf_width : float
-      the spatial (y) half-size of the psf
-
-    Output
-    ------
-    mask_width : float
-      the mask-width in wavelength space required to mask out the spatially-rescaled PSF
-
+    For an off-axis PSF at separation `sep` in deg, get the scaled row, col values
     """
-    width = 2 * psf_width * ref_wl_ind / (y - y0)
-    return width
- 
-def calc_scaled_psf_row(psf_row, center_row, scale_factors):
+    scale = wlsol[ref_wl_ind]/wlsol
+    sep = sep * scale
+    row, col = wcs.world_to_pixel(wlsol.to(units.m), sep.to(units.deg))
+    return row, col
+
+
+def compute_scaled_psf_trace(psf_row, center_row, scale_factors):
     """
     For a PSf centered on some row, calculate where it goes after being scaled
+    one scale factor for each column
+    scale_factor := wlsol/wlsol[ref_wl]
     """
     y = (psf_row-center_row)*scale_factors + center_row
     return y
@@ -156,7 +143,7 @@ def calc_wl_mask_position(
     y0 : float,
     y1 : int,
 	ycen : float,
-	psf_width : float,
+	psf_halfwidth : float,
     wlsol : np.ndarray,
 	ref_wl_ind : float,
     wl_pixscale : float,
@@ -176,10 +163,14 @@ def calc_wl_mask_position(
       the row you are interpolating
 	ycen: float
       the central row from which the scaling is computed
+	psf_halfwidth : float
+      the spatial (y) half-size of the psf
+    wlsol : np.ndarray
+      unitless wavelength solution, in Angstrom
 	ref_wl_ind : float
       the index of the reference wavelength for the scaling
-	psf_width : float
-      the spatial (y) half-size of the psf
+    wl_pixscale : float
+      how many wavelengths per pixel in the row axis
 
     Output
     ------
@@ -187,7 +178,10 @@ def calc_wl_mask_position(
       the mask-width in wavelength space required to mask out the spatially-rescaled PSF
 
     """
-    width = 2 * psf_width * ref_wl_ind / (y1 - ycen)
+    if ref_wl_ind < 0:
+        ref_wl_ind = np.arange(wlsol.size)[ref_wl_ind]
+    # width = 2 * psf_width * ref_wl_ind / (y1 - ycen)
+    width = wlsol.min()/wl_pixscale * 2*psf_halfwidth / (y1-ycen)
     # center = ref_wl_ind * (y0-ycen) / (y1-ycen)
     ref_wl = wlsol[ref_wl_ind]
     wl0 = wlsol[0]
@@ -195,7 +189,7 @@ def calc_wl_mask_position(
     return center, width
 
 
-def deproject_signal(
+def descale_signal(
     residual_img : np.ndarray,
 	ytest : float,
 	ycen : float,
@@ -227,7 +221,7 @@ def deproject_signal(
 
     """
     cols = np.arange(residual_img.shape[1])
-    signal_rows = calc_scaled_psf_row(ytest, ycen, wl_scaling)
+    signal_rows = compute_scaled_psf_trace(ytest, ycen, wl_scaling)
     signal = np.zeros_like(cols)*np.nan
     for c in cols:
         r = signal_rows[c]
@@ -272,7 +266,7 @@ def construct_psf_model(
     col_inds = np.arange(scaled_img.shape[1])
     psf_model = scaled_img.copy()
     scale_factors = obs.wlsol[wl_ref_ind]/obs.wlsol
-    scaled_rows = calc_scaled_psf_row(y_test, y_ref, scale_factors)
+    scaled_rows = compute_scaled_psf_trace(y_test, y_ref, scale_factors)
     unique_rows = np.arange(np.floor(scaled_rows.min()), np.ceil(scaled_rows.max()), dtype=int)
     for row_ind in unique_rows:
         # compute the center and width of a scaled PSF projected across a row
@@ -332,28 +326,107 @@ def model_and_subtract_target(
     """
     col_inds = np.arange(scaled_img.shape[1])
     psf_model = scaled_img.copy()
-    scale_factors = obs.wlsol[wl_ref_ind]/obs.wlsol
-    scaled_rows = calc_scaled_psf_row(y_test, y_ref, scale_factors)
-    unique_rows = np.arange(np.floor(scaled_rows.min()), np.ceil(scaled_rows.max()), dtype=int)
+    scale_factors = obs.wlsol/obs.wlsol[wl_ref_ind]
+    scaled_rows = compute_scaled_psf_trace(y_test, y_ref, scale_factors)
+    unique_rows = np.arange(
+        np.floor(scaled_rows.min()), np.ceil(scaled_rows.max()),
+        dtype=int
+    )
+    masks = {}
     for row_ind in unique_rows:
         # compute the center and width of a scaled PSF projected across a row
         mask_center, mask_width = calc_wl_mask_position(
             y_test,
-            row_ind, 
-            y_ref, 
-            psf_width, 
-            obs.wlsol.to(units.Angstrom).value, 
-            wl_ref_ind, 
+            row_ind,
+            y_ref,
+            psf_width,
+            obs.wlsol.to(units.Angstrom).value,
+            wl_ref_ind,
             obs.hdrs['occ']['sci']['CD1_1']
         )
-        mask_range = np.round([mask_center-mask_width/2, mask_center+mask_width/2]).astype(int)
-        mask = np.zeros(scaled_img.shape[1]).astype(bool)
-        mask[mask_range[0]:mask_range[1]] = True 
-        masked_row = np.ma.masked_array(scaled_img[row_ind], mask=mask)
-        interp_row = interpolate.Akima1DInterpolator(
-                col_inds[~masked_row.mask],
-                masked_row[~masked_row.mask], 
-            )(col_inds)
+        mask = make_row_mask(obs.wlsol.size, mask_center, mask_width)
+        masks[row_ind] = mask
+        if mask.all():
+            psf_model[row_ind] = scaled_img[row_ind][:]
+        interp_row = fit_under_psf(col_inds, scaled_img[row_ind], mask)
         psf_model[row_ind] = interp_row
+
     residual = scaled_img - psf_model
-    return residual
+    return unique_rows, masks, psf_model, residual
+
+def make_row_mask(npix, center, width):
+    """
+    Parameters
+    ----------
+    npix : int
+      the number of pixels in the row
+    center : float
+      the center of the mask, in pixels
+    width : float
+      the full width of the mask, in pixels
+
+    Output
+    ------
+    mask : np.ndarray[bool]
+      a boolean array that is True *inside* the mask region and False elsewhere
+    """
+    if center < 0 or center > npix:
+        mask = np.ones(npix).astype(bool)
+    else:
+        mask_range = np.round(
+            [center-width/2, center+width/2]
+        ).astype(int)
+        mask = np.zeros(npix).astype(bool)
+        mask[mask_range[0]:mask_range[1]] = True
+    return mask
+
+
+def fit_under_psf(
+        col_inds : np.ndarray,
+        data : np.ndarray,
+        mask : np.ndarray,
+) -> np.ndarray :
+    """
+    Infer the values of the data array under the test PSF.
+
+    Parameters
+    ----------
+    col : np.ndarray[int]
+      the column indices
+    data : np.ndarray[float]
+      the row of data
+    mask : np.ndarray[bool]
+      a mask that is true under the test psf
+
+    Output
+    ------
+    bgnd : np.ndarray
+      the data array with the masked values filled
+
+    """
+    # 1-D interpolation
+    masked_row = np.ma.masked_array(data, mask=mask)
+    psf_model_func = interpolate.Akima1DInterpolator(
+        col_inds[~mask],
+        data[~mask],
+    )
+    psf_model = data.copy()
+    psf_model[masked_row.mask] = psf_model_func[np.where(masked_row.mask)[0]]
+
+    # # fit a 2-D polynomial
+    # mask_lb, mask_ub = np.where(mask)[0][[ 0, -1 ]] + np.array([0, 1])
+    # fit_lb = max([mask_lb-30, 0]), mask_lb
+    # fit_ub = mask_ub+1, min([mask_ub+1+30, data.size])
+    # fit_cols = np.concatenate([
+    #     np.arange(fit_lb[0], fit_lb[1]),
+    #     np.arange(fit_ub[0], fit_ub[1]),
+    # ])
+    # fit_data = data[fit_cols]
+    # # 2nd-order polynomial fit
+    # if len(fit_data) < 1:
+    #     print("No data to fit!")
+    #     return data
+    # poly2 = np.polynomial.Polynomial.fit(fit_cols, fit_data, 1)
+    # psf_model = data.copy()
+    # psf_model[mask] = poly2(np.arange(mask_lb, mask_ub))
+    return psf_model
