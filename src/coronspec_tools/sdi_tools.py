@@ -612,7 +612,7 @@ class SDI:
         mask_lb, mask_ub = center - mask_halfwidth, center + mask_halfwidth
         return mask_lb, mask_ub
 
-    def fit_masked_data(self, masked_row):
+    def fit_masked_data(self, masked_row, polynomial_order=2):
         """
         Replace the masked data in the row with some function
         """
@@ -630,15 +630,15 @@ class SDI:
             #     col_inds[~mask],
             #     masked_row[~mask],
             # )
-            buffer = 50 # how many columns to include in the fit
+            pad = 200 # how many columns to include in the fit
             lb, ub = np.where(mask)[0][[0, -1]]
-            lb_range = [max([lb - buffer, 0]), lb]
-            ub_range = [ub, min([col_inds.size, ub+buffer])]
+            lb_range = [max([lb - pad, 0]), lb]
+            ub_range = [ub, min([col_inds.size, ub+pad])]
             fit_pix = np.concatenate([
                 col_inds[lb_range[0]:lb_range[1]],
                 col_inds[ub_range[0]:ub_range[1]]
             ])
-            psf_model_func = np.polynomial.Polynomial.fit(fit_pix, masked_row[fit_pix], 1)
+            psf_model_func = np.polynomial.Polynomial.fit(fit_pix, masked_row[fit_pix], 2)
 
             psf_model[mask] = psf_model_func(np.where(masked_row.mask)[0])
         return psf_model
