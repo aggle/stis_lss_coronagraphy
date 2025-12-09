@@ -503,8 +503,8 @@ class SDI:
         self.psf_halfwidth = psf_halfwidth
 
 
-    def compute_scaled_stamp(self, ref_wl_ind, stamp, stamp_center, fill_end_columns=False):
-        scale_factors = self.obs.wlsol[ref_wl_ind]/self.obs.wlsol
+    def compute_scaled_stamp(self, ref_wl_ind, stamp, stamp_center, fill_end_columns=False, scale_factor=1):
+        scale_factors = self.obs.wlsol[ref_wl_ind]/self.obs.wlsol * scale_factor
         scaled_stamp = rescale_img(
             stamp,
             stamp_center,
