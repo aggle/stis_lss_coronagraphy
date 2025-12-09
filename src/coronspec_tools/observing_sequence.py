@@ -76,6 +76,8 @@ class ObsSeq:
             sx1_file, unocc_file, occ_file,
         )
         self.occ_row = occ_row
+        if str(occ_file)[:-5].split("_")[-1] == 'sx2':
+            self.occ_row -= 88.5
         self.occ_sep = self.occ_wcs.pixel_to_world(
             0, self.occ_row
         )[1]
@@ -101,7 +103,8 @@ class ObsSeq:
             self.occ_img, 
             position=(self.occ_img.shape[1]/2, self.occ_row),
             size=(width, self.occ_img.shape[1]),
-            wcs=self.occ_wcs
+            wcs=self.occ_wcs,
+            copy=True,
         )
         self.occ_stamp_center = self.occ_row - self.occ_stamp.origin_original[1]
 
@@ -164,7 +167,13 @@ class ObsSeq:
                 warnings.simplefilter('ignore', AstropyWarning)
                 self.unocc_wcs = WCS(hdulist[1].header)
             self.unocc_img = hdulist[1].data.copy()
+            filetype = unocc_file[:-5].split("_")[-1]
+            if filetype == 'sx2':
+                self.unocc_img = crop_sx2(self.unocc_img, self.wlsol.size)
             self.offset, self.unocc_row = ctfs.find_unocc_pos(hdulist, self.wlsol)
+            if filetype == 'sx2':
+                self.unocc_row -= 88.5
+                print(self.unocc_row)
         self.unocc_trace = self.get_unocc_trace(trace_width)
         return
 
@@ -175,15 +184,10 @@ class ObsSeq:
                 warnings.simplefilter('ignore')
                 self.occ_wcs = WCS(hdulist[1].header)
             self.occ_img = hdulist[1].data.copy()
-
-    def get_cutout(self, row_ind):
-        """Return a cutout from the occulted exposure"""
-        return Cutout2D(
-            self.occ_img, 
-            position=(self.occ_img.shape[1]/2, row_ind),
-            size=(101, self.occ_img.shape[1]),
-            wcs=self.occ_wcs
-        )
+            filetype = occ_file[:-5].split("_")[-1]
+            if filetype == 'sx2':
+                self.occ_img = crop_sx2(self.occ_img, self.wlsol.size)
+            return
 
     def clean_stamp(self, img, width=10):
         """Apply median filtering to a 2-D spectral image"""
@@ -195,7 +199,8 @@ class ObsSeq:
             self.unocc_img, 
             position=(self.unocc_img.shape[1]/2, self.unocc_row),
             size=(trace_width, self.unocc_img.shape[1]),
-            wcs=self.unocc_wcs
+            wcs=self.unocc_wcs,
+            copy=True,
         )
         return trace
 
@@ -210,3 +215,14 @@ class ObsSeq:
         self.occ_img = self.occ_img / self.primary_spectrum.value
         self.occ_stamp.data = self.occ_stamp.data / self.primary_spectrum.value
         return
+
+def crop_sx2(img : np.ndarray, nwl : int) -> np.ndarray:
+    """If a padded SX2 image, do some rough cropping to force it to 1024x1024"""
+    nanimg = img.copy()
+    nanimg[nanimg == 0] = np.nan
+    row, col = np.where(~np.isnan(nanimg))
+    # use the bottom right corner
+    lr = (row.min(), col.max())
+    cimg = nanimg[lr[0]:lr[0]+nwl, lr[1]-nwl:lr[1]].copy()
+    cimg[np.isnan(cimg)] = 0
+    return cimg 
