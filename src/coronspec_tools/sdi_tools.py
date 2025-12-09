@@ -502,6 +502,7 @@ class SDI:
         self.scaled_stamp = np.zeros_like(obs.occ_stamp.data)
         self.psf_halfwidth = psf_halfwidth
 
+
     def compute_scaled_stamp(self, ref_wl_ind, stamp, stamp_center, fill_end_columns=False):
         scale_factors = self.obs.wlsol[ref_wl_ind]/self.obs.wlsol
         scaled_stamp = rescale_img(
