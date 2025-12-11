@@ -55,17 +55,21 @@ class SDI:
             self.obs.occ_stamp_center,
             self.scale_factors
         )
-        trace_rows = np.arange(np.floor(y.min()), np.ceil(y.max())+1, dtype=int)
+        # drop invalid values of y
+        trace_rows = self.check_trace_rows(y)
         scaled_region = self.scaled_stamp[trace_rows]
         psf_model = self.model_target_row(target_row_ind, psf_halfwidth)
         return scaled_region - psf_model
 
-    def descale_residual_flux(self, residual_img, y_vals):
+    def descale_residual_flux(self, residual_img, y_vals, cols=None):
         """
         y_vals : np.ndarray
           the y value in each column for which to estimate the signal
+        cols : np.ndarray
+          the columns corresponding to the y-values
         """
-        cols = np.arange(residual_img.shape[1])
+        if cols is None:
+            cols = np.arange(residual_img.shape[1])
         signal = np.zeros_like(cols)*np.nan
         for c in cols:
             r = y_vals[c]
@@ -100,12 +104,20 @@ class SDI:
             self.obs.occ_stamp_center,
             self.scale_factors
         )
-        trace_rows = np.arange(np.floor(y.min()), np.ceil(y.max())+1, dtype=int)
+        trace_rows = self.check_trace_rows(y)
         psf_model = np.zeros((trace_rows.size, x.size))
         for i, scaled_row_ind in enumerate(trace_rows):
             model_row = self.model_scaled_row(target_row_ind, scaled_row_ind, psf_halfwidth)
             psf_model[i] = model_row
         return psf_model
+
+    def check_trace_rows(self, trace_y):
+        # make sure that the trace row indices are valid
+        trace_rows = np.arange(np.floor(trace_y.min()), np.ceil(trace_y.max())+1, dtype=int)
+        trace_rows = trace_rows[trace_rows >= 0]
+        trace_rows = trace_rows[trace_rows < self.scaled_stamp.shape[0]]
+        return trace_rows
+
 
 
     def model_scaled_row(
@@ -115,7 +127,7 @@ class SDI:
         psf_halfwidth = None,
         fit_pad : int = 200,
         fit_poly : float = 2,
-    ) : np.ndarray:
+    ) -> np.ndarray:
         """
         Model the PSF under the hypothetical companion from a target row, at a single scaled row
         target_row_ind : int
@@ -130,6 +142,9 @@ class SDI:
           order of the polynomial to use for fitting
 
         """
+        if scaled_row_ind > self.scaled_stamp.shape[0]-1:
+            print("Scaled row index too large; returning nan")
+            return np.zeros(self.scaled_stamp.shape[1])*np.nan
         if psf_halfwidth is None:
             psf_halfwidth = self.psf_halfwidth
         # compute the mask
