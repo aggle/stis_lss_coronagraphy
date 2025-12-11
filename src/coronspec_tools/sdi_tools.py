@@ -23,19 +23,29 @@ class SDI:
         self.psf_halfwidth = psf_halfwidth
 
 
-    def compute_scaled_stamp(self, ref_wl_ind, stamp, stamp_center, fill_end_columns=False, scale_factor=1):
-        scale_factors = self.obs.wlsol[ref_wl_ind]/self.obs.wlsol * scale_factor
+    def compute_scaled_stamp(
+            self,
+            ref_wl_ind : int | None = None,
+            stamp : np.ndarray | None = None,
+            stamp_center : float | None = None,
+    ) -> None:
+        if ref_wl_ind is None:
+            ref_wl_ind = self.ref_wl_ind
+        if stamp is None:
+            stamp = self.obs.occ_stamp.data
+        if stamp_center is None:
+            stamp_center = self.obs.occ_stamp_center
+
+        scale_factors = self.obs.wlsol[ref_wl_ind]/self.obs.wlsol
         scaled_stamp = rescale_img(
             stamp,
             stamp_center,
             scale_factors
         )
-        if fill_end_columns:
-            scaled_stamp[:, :10] = scaled_stamp[:, 10][:, None]
-            scaled_stamp[:, -10:] = scaled_stamp[:, -11][:, None]
-        self.scaled_stamp = scaled_stamp
         self.ref_wl_ind = ref_wl_ind
         self.scale_factors = scale_factors
+        self.scaled_stamp = scaled_stamp
+        return
 
     def subtract_target_model(self, target_row_ind, psf_halfwidth = None):
         if psf_halfwidth is None:
