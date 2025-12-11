@@ -184,9 +184,9 @@ def make_sx2_mask(
 
 def rolling_median(array, window=1):
     median_filtered = np.zeros(array.size)
-    for i in np.arange(window, array.size):
+    for i in np.arange(array.size):
         lb, ub = i-window, i+window+1
-        lb = max([ lb, i ])
+        lb = max([ lb, 0 ])
         ub = min([ ub, array.size ])
         median_filtered[i] = np.nanmedian(array[lb:ub])
     return median_filtered
