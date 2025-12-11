@@ -86,12 +86,13 @@ class ObsSeq:
         if median_clean > 0:
             specunit = self.primary_spectrum.unit
             self.primary_spectrum = ctutils.rolling_median(
-                self.primary_spectrum.value, 10
+                self.primary_spectrum.value, median_clean
             ) * specunit
             self.primary_spectrum_unc = ctutils.rolling_median(
-                self.primary_spectrum_unc.value, 10
+                self.primary_spectrum_unc.value, median_clean
             ) * specunit
-            self.occ_stamp.data = self.clean_stamp(self.occ_stamp.data, 10)
+            self.occ_stamp.data = self.clean_stamp(self.occ_stamp.data, median_clean)
+            self.unocc_trace.data = self.clean_stamp(self.unocc_trace.data, median_clean)
         if contrast:
             # convert to units of contrast
             self.convert_to_contrast()
@@ -157,6 +158,11 @@ class ObsSeq:
                 np.squeeze(table[colname]),
                 unit=colunit
             )
+            self.throughput = self.primary_spectrum_flux / self.primary_spectrum
+            self.throughput_unc = self.throughput * np.sqrt(
+                (self.primary_spectrum_flux_unc/self.primary_spectrum_flux)**2 +\
+                (self.primary_spectrum_unc/self.primary_spectrum)**2
+            )
         return
 
     def process_unocculted(self, unocc_file, trace_width):
@@ -206,14 +212,17 @@ class ObsSeq:
 
     def convert_to_contrast(self):
         """Converts all relevant data to units of contrast"""
+        # spectrum = self.primary_spectrum.value
         exptime = self.hdrs['unocc']['sci']['exptime']
+        spectrum = self.unocc_trace.data.sum(axis=0) / exptime
         self.unocc_img = self.unocc_img / exptime
-        self.unocc_img = self.unocc_img / self.primary_spectrum.value
-        self.unocc_trace.data = self.unocc_trace.data / self.primary_spectrum.value
         exptime = self.hdrs['occ']['sci']['exptime']
         self.occ_img = self.occ_img / exptime
-        self.occ_img = self.occ_img / self.primary_spectrum.value
-        self.occ_stamp.data = self.occ_stamp.data / self.primary_spectrum.value
+
+        self.unocc_img = self.unocc_img / spectrum
+        self.unocc_trace.data = self.unocc_trace.data / spectrum
+        self.occ_img = self.occ_img / spectrum
+        self.occ_stamp.data = self.occ_stamp.data / spectrum
         return
 
 def crop_sx2(img : np.ndarray, nwl : int) -> np.ndarray:
