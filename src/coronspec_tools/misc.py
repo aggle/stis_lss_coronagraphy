@@ -12,6 +12,7 @@ from astropy.stats import SigmaClip
 from photutils.centroids import centroid_2dg as centroid_func
 from scipy import ndimage
 
+# shortcut for quickly setting matplotlib image ranges
 img_vrange = lambda img, vmin=0.01, vmax=0.99: dict(zip(['vmin','vmax'], np.nanquantile(img, [vmin, vmax])))
 
 def get_stamp_shape(stamp : int | np.ndarray | pd.Series) -> np.ndarray:
