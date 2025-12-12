@@ -131,7 +131,7 @@ def find_star_from_wcs(
         unocc_2d_file : str | Path,
         occ_2d_file : str | Path,
         return_offset : bool = False,
-) -> tuple[float, float] | tuple[tuple, float]:
+) -> tuple[float, float] | tuple[float, float, float]:
     """
     Use the WCS to find the pixel coordinates of the occulted star. The WCS has
     units of angular separation on one axis, with the target being placed at 0,
@@ -160,6 +160,7 @@ def find_star_from_wcs(
     Returns the row position of the star in the occulted exposure. If
     return_offset is True, then it returns a tuple where the second element is
     the distance in degrees from the nominal position.
+    Also returns the bar position of the occulted exposure
 
     """
     # get the wavelengths of the spectrum
@@ -180,13 +181,18 @@ def find_star_from_wcs(
     with fits.open(occ_2d_file) as hdulist:
         postarg2 = (hdulist[0].header['POSTARG2'] * units.arcsec).to(units.deg)
         wcs = WCS(hdulist[1].header)
-        occ_pos = wcs.world_to_pixel(
+        # not sure why you need a -1 but it looks more correct
+        occ_bar = wcs.world_to_pixel(
+            wl_lo,
+            meas_offset
+        )[1] - 1
+        occ_row = wcs.world_to_pixel(
             wl_lo,
             meas_offset + postarg2
-        )
+        )[1] - 1
     if return_offset:
-        return occ_pos, meas_offset
+        return occ_row, occ_bar, meas_offset
     else:
-        return occ_pos
+        return occ_row, occ_bar
 
 

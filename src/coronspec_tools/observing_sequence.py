@@ -72,10 +72,9 @@ class ObsSeq:
         self.process_occulted(occ_file)
 
         # process data
-        (occ_col, occ_row) = ctfs.find_star_from_wcs(
+        self.occ_row, self.occ_bar = ctfs.find_star_from_wcs(
             sx1_file, unocc_file, occ_file,
         )
-        self.occ_row = occ_row
         if str(occ_file)[:-5].split("_")[-1] == 'sx2':
             self.occ_row -= 88.5
         self.occ_sep = self.occ_wcs.pixel_to_world(
@@ -224,6 +223,22 @@ class ObsSeq:
         self.occ_img = self.occ_img / spectrum
         self.occ_stamp.data = self.occ_stamp.data / spectrum
         return
+
+    def contrast_counts2flux(self, signal):
+        """Convert a row of signal from contrast units to flux"""
+        return signal * self.throughput
+
+    def get_bar_bounds(self) -> tuple[float, float]:
+        halfwidth = (0.25*units.arcsec).to(units.deg)
+        lb = self.occ_wcs.world_to_pixel(
+            self.occ_wcs.pixel_to_world(0, self.occ_row)[0],
+            self.occ_wcs.pixel_to_world(0, self.occ_bar)[1] - halfwidth
+        )[1]
+        ub = self.occ_wcs.world_to_pixel(
+            self.occ_wcs.pixel_to_world(0, self.occ_row)[0],
+            self.occ_wcs.pixel_to_world(0, self.occ_bar)[1] + halfwidth 
+        )[1]
+        return lb, ub
 
 def crop_sx2(img : np.ndarray, nwl : int) -> np.ndarray:
     """If a padded SX2 image, do some rough cropping to force it to 1024x1024"""

@@ -2,6 +2,8 @@ import numpy as np
 from scipy import ndimage
 from scipy import interpolate
 
+import pandas as pd
+
 from astropy import units
 from astropy.wcs import WCS
 
@@ -61,21 +63,30 @@ class SDI:
         psf_model = self.model_target_row(target_row_ind, psf_halfwidth)
         return scaled_region - psf_model
 
-    def descale_residual_flux(self, residual_img, y_vals, cols=None):
+    def descale_trace(self, scaled_img, y_vals, y_range):
         """
+        Get the signal from the trace in a wavelength-scaled image
+        
         y_vals : np.ndarray
           the y value in each column for which to estimate the signal
-        cols : np.ndarray
-          the columns corresponding to the y-values
+        y_range : np.ndarray
+          the min and max rows covered by the scaled img
         """
-        if cols is None:
-            cols = np.arange(residual_img.shape[1])
-        signal = np.zeros_like(cols)*np.nan
+        # valid = (y_vals > y_range[0]) & (y_vals < y_range[1]-1)
+        # normalize the y-values to the image rows
+        shifted_y_vals = y_vals - y_range[0]
+        valid = (shifted_y_vals >= 0) & (shifted_y_vals < scaled_img.shape[0])
+        cols = np.arange(scaled_img.shape[1])[valid]
+
+        signal = np.zeros_like(shifted_y_vals)*np.nan
         for c in cols:
-            r = y_vals[c]
+            r = shifted_y_vals[c]
             r_lo, r_hi = [f(r).astype(int) for f in (np.floor, np.ceil)]
+            # make sure that r_lo and r_hi are in the bounds
+            r_lo = min([max([0,r_lo ]), r_hi])
+            r_hi = max([min(r_hi, scaled_img.shape[0]-1), r_lo])
             weights = np.abs(r-r_lo)**-2, np.abs(r_hi-r)**-2
-            signal[c] = np.sum(residual_img[[r_lo,r_hi], c]*weights) / np.sum(weights)
+            signal[c] = np.sum(scaled_img[[r_lo,r_hi], c]*weights) / np.sum(weights)
         return signal
 
     def model_target_row(
@@ -241,6 +252,67 @@ class SDI:
             psf_model[mask] = psf_model_func(np.where(masked_row.mask)[0])
         return psf_model
 
+    def _get_masks_for_target_row(
+            self, target_row_ind,
+    ) -> pd.Series:
+        """
+        Compute all the mask edges for a target row
+        """
+        trace = compute_scaled_psf_trace(
+            target_row_ind,
+            self.obs.occ_stamp_center,
+            self.scale_factors
+        )
+        trace_rows = self.check_trace_rows(trace)
+        masks = pd.Series({
+            row: self._compute_row_mask(target_row_ind, row, self.psf_halfwidth)
+            for row in trace_rows
+        })
+        return masks
+
+    def generate_model_results_df(self, row_lo, row_hi):
+        """
+        Generate a dataframe where each row is a target row and has the
+        following columns:
+
+        'trace': row coordinates of the trace in each column
+        'row_indices': the row indices covered by the trace
+        'scaled_stamp': the section of the scaled stamp indexed by row_indices
+        'model': the model of the scaled stamp
+        'residual': scaled_stamp - model
+
+        """
+        # these are the rows we will investigate for signal
+        target_row_indices = np.arange(row_lo, row_hi+1)
+        # these are the row coordinates in scaled space for a hypothetical source in each of those rows
+        target_row_traces = pd.Series({i: compute_scaled_psf_trace(
+            i, 
+            self.obs.occ_stamp_center,
+            self.scale_factors
+        ) for i in target_row_indices})
+        # get the unique and valid row indices for each trace
+        target_row_model_rows = target_row_traces.apply(self.check_trace_rows)
+        # these are the scaled stamp regions covered by the trace
+        target_row_stamps = pd.Series({
+            i: self.scaled_stamp[target_row_model_rows[i]]
+            for i in target_row_indices
+        })
+        # these are the model stamps covering the trace region in the target rows
+        target_row_models = pd.Series({
+            i: self.model_target_row(i)
+            for i in target_row_indices
+        })
+        # data - model
+        target_row_residuals = target_row_stamps - target_row_models
+        # put it all in one organized dataframe
+        self.model_results = pd.concat({
+            'trace': target_row_traces,
+            'row_indices': target_row_model_rows,
+            'scaled_stamp': target_row_stamps,
+            'model': target_row_models,
+            'residual': target_row_residuals,
+        }, axis=1)
+        return
 
 def rescale_img(
     img : np.ndarray,
