@@ -5,6 +5,7 @@ import matplotlib as mpl
 from matplotlib import pyplot as plt
 
 import numpy as np
+import pandas as pd
 
 from coronspec_tools import (
     observing_sequence,
@@ -15,7 +16,7 @@ from coronspec_tools import (
 
 def plot_injection_results(
         ret: retrieval_tools.Retriever,
-        row : retrieval_tools.pd.Series
+        row : pd.Series
 ):
     """
     Plot the results of injecting and retrieving a spectrum
@@ -52,3 +53,75 @@ def plot_injection_results(
 
     return fig
 
+
+def plot_row_fitting(
+        results_row : pd.Series,
+) -> mpl.figure.Figure:
+    residual_img = results_row['residual']
+
+    scaled_ind = results_row['row_indices']
+    naxes = len(scaled_ind)
+    ncols = np.ceil(np.sqrt(naxes)).astype(int)
+    nrows = np.ceil(naxes/ncols).astype(int)
+    fig, axes = plt.subplots(
+        nrows=nrows, ncols=ncols, figsize=(5*ncols, 5*nrows),
+        sharex=True, sharey=True
+    )
+
+    cols = np.arange(residual_img.shape[1])
+
+    for i, (ax, scaled_row_ind) in enumerate(zip(axes.flat, scaled_ind)):
+        ax.set_title(f"Scaled row: {scaled_row_ind}")
+        mask = results_row['stamp_mask'][i]
+        scaled_row = results_row['scaled_stamp'][i]
+        scaled_unc = results_row['scaled_stamp_unc'][i]
+        model = results_row['model'][i]
+        ax.errorbar(
+            cols,
+            np.ma.masked_array(scaled_row, mask),
+            # yerr = np.ma.masked_array(scaled_unc, mask),
+            c='C0'
+        )
+        ax.errorbar(
+            cols,
+            np.ma.masked_array(scaled_row, ~mask),
+            # yerr = np.ma.masked_array(scaled_unc, ~mask),
+            c='C1'
+        )
+        ax.plot(cols, np.ma.masked_array(model, mask), c='C2')
+
+    return fig
+
+
+def plot_row_fitting_hist(
+    results_row : pd.Series,
+) -> mpl.figure.Figure:
+    residual_img = results_row['residual']
+
+    scaled_ind = results_row['row_indices']
+    naxes = len(scaled_ind)
+    ncols = np.ceil(np.sqrt(naxes)).astype(int)
+    nrows = np.ceil(naxes/ncols).astype(int)
+    fig, axes = plt.subplots(
+        nrows=nrows, ncols=ncols, figsize=(5*ncols, 5*nrows),
+        sharex=False, sharey=False
+    )
+
+    cols = np.arange(residual_img.shape[1])
+
+    for i, (ax, scaled_row_ind) in enumerate(zip(axes.flat, scaled_ind)):
+        ax.set_title(f"Scaled row: {scaled_row_ind}")
+        mask = results_row['stamp_mask'][i]
+        residual = results_row['residual'][i][~mask]
+        ax.hist(
+            residual,
+            bins=int(residual.size/10),
+            log=False,
+            histtype='step',
+        )
+        ax.axvline(0, c='k', alpha=0.5)
+    for ax in axes.flat:
+        ax.set_ylabel("Npix")
+        ax.set_xlabel("Residual")
+        ax.label_outer()
+    return fig

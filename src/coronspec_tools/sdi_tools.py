@@ -51,35 +51,30 @@ class SDI:
     ) -> None:
         if ref_wl_ind is None:
             ref_wl_ind = self.ref_wl_ind
-        if stamp is None:
-            stamp = self.obs.occ_stamp.data
-        if stamp_center is None:
-            stamp_center = self.obs.occ_stamp_center
+        # if stamp is None:
+        stamp = self.obs.occ_stamp.data
+        stamp_unc = self.obs.occ_stamp_unc.data
+        # if stamp_center is None:
+        stamp_center = self.obs.occ_stamp_center
+
 
         scale_factors = self.obs.wlsol[ref_wl_ind]/self.obs.wlsol
+        self.ref_wl_ind = ref_wl_ind
+        self.scale_factors = scale_factors
+
         scaled_stamp = rescale_img(
             stamp,
             stamp_center,
             scale_factors
         )
-        self.ref_wl_ind = ref_wl_ind
-        self.scale_factors = scale_factors
-        self.scaled_stamp = scaled_stamp
-        return
-
-    def subtract_target_model(self, target_row_ind, psf_halfwidth = None):
-        if psf_halfwidth is None:
-            psf_halfwidth = self.psf_halfwidth
-        y = compute_scaled_psf_trace(
-            target_row_ind, 
-            self.obs.occ_stamp_center,
-            self.scale_factors
+        scaled_stamp_unc = rescale_img(
+            stamp_unc,
+            stamp_center,
+            scale_factors
         )
-        # drop invalid values of y
-        trace_rows = self.check_trace_rows(y)
-        scaled_region = self.scaled_stamp[trace_rows]
-        psf_model = self.model_target_row(target_row_ind, psf_halfwidth)
-        return scaled_region - psf_model.data
+        self.scaled_stamp = scaled_stamp
+        self.scaled_stamp_unc = scaled_stamp_unc
+        return
 
     def descale_trace(self, scaled_img, y_vals, y_range):
         """
@@ -110,7 +105,8 @@ class SDI:
     def model_target_row(
             self,
             target_row_ind,
-            psf_halfwidth = None
+            psf_halfwidth = None,
+            model_kwargs = {},
     ) -> np.ma.masked_array:
         """
         Generate a model for the given row of an unscaled stamp
@@ -136,7 +132,7 @@ class SDI:
         trace_rows = self.check_trace_rows(y)
         psf_model = np.ma.masked_array(np.zeros((trace_rows.size, x.size)))
         for i, scaled_row_ind in enumerate(trace_rows):
-            model_row = self.model_scaled_row(target_row_ind, scaled_row_ind, psf_halfwidth)
+            model_row = self.model_scaled_row(target_row_ind, scaled_row_ind, psf_halfwidth, **model_kwargs)
             psf_model[i] = model_row
         return psf_model
 
@@ -182,7 +178,8 @@ class SDI:
         # model the row
         scaled_row = self.scaled_stamp[scaled_row_ind]
         masked_row = np.ma.masked_array(scaled_row, mask)
-        psf_model = self._fit_masked_data(masked_row, fit_poly, fit_pad)
+        masked_unc = np.ma.masked_array(self.scaled_stamp_unc[scaled_row_ind], mask=mask)
+        psf_model = self._fit_masked_data(masked_row, fit_poly, fit_pad, masked_unc)
         psf_model = np.ma.masked_array(psf_model, mask=~masked_row.mask)
         return psf_model
 
@@ -232,7 +229,8 @@ class SDI:
         self,
 	    masked_row : np.ma.masked_array,
 	    polynomial_order : int = 2,
-	    pad  : int = 200
+	    pad  : int = 200,
+        unc_array : np.ndarray | None = None,
     ):
         """
         Replace the masked data in the row with some function
@@ -242,12 +240,14 @@ class SDI:
           order of the polynomial to use for fitting the masked region
 	    pad : int = 200
           upper limit on how many pixels on either side of the mask to use
+        unc_array : np.ndarray | None = None
+          Uncertainties used to weight the fit, if given
         """
         psf_model = masked_row.data.copy()
         col_inds = np.arange(masked_row.size)
         mask = masked_row.mask
         if col_inds[~mask].size == 0:
-            # everything is maskde
+            # everything is masked
             psf_model = masked_row.data * np.nan
         elif col_inds[mask].size == col_inds.size:
             # nothing is masked
@@ -264,8 +264,13 @@ class SDI:
                 col_inds[lb_range[0]:lb_range[1]],
                 col_inds[ub_range[0]:ub_range[1]]
             ])
+            if unc_array is not None:
+                unc_array = 1/unc_array[fit_pix]**2
             psf_model_func = np.polynomial.Polynomial.fit(
-                fit_pix, masked_row[fit_pix], polynomial_order
+                fit_pix,
+                masked_row[fit_pix],
+                polynomial_order,
+                w = unc_array,
             )
 
             psf_model[mask] = psf_model_func(np.where(masked_row.mask)[0])
@@ -289,7 +294,9 @@ class SDI:
         })
         return masks
 
-    def generate_model_results_df(self, row_lo, row_hi):
+    def generate_model_results_df(
+            self, row_lo, row_hi, model_kwargs={},
+    ) -> None:
         """
         Generate a dataframe where each row is a target row and has the
         following columns:
@@ -299,6 +306,8 @@ class SDI:
         'scaled_stamp': the section of the scaled stamp indexed by row_indices
         'model': the model of the scaled stamp
         'residual': scaled_stamp - model
+
+        model_kwargs : these get passed along to model_scaled_row
 
         """
         # these are the rows we will investigate for signal
@@ -316,9 +325,13 @@ class SDI:
             i: self.scaled_stamp[target_row_model_rows[i]]
             for i in target_row_indices
         })
+        target_row_stamp_uncs = pd.Series({
+            i: self.scaled_stamp_unc[target_row_model_rows[i]]
+            for i in target_row_indices
+        })
         # these are the model stamps covering the trace region in the target rows
         target_row_models = pd.Series({
-            i: self.model_target_row(i)
+            i: self.model_target_row(i, model_kwargs=model_kwargs)
             for i in target_row_indices
         })
         # split the model data and masks
@@ -331,6 +344,7 @@ class SDI:
             'trace': target_row_traces,
             'row_indices': target_row_model_rows,
             'scaled_stamp': target_row_stamps,
+            'scaled_stamp_unc' : target_row_stamp_uncs,
             'stamp_mask': target_row_masks,
             'model': target_row_models,
             'residual': target_row_residuals,
@@ -660,94 +674,94 @@ def construct_psf_model(
     return psf_model
 
 
-def model_and_subtract_target(
-    scaled_img : np.ndarray,
-    obs : observing_sequence.ObsSeq,
-    y_test : int,
-    y_ref : float,
-    wl_ref_ind : int,
-    psf_width : float = 5.
-) -> np.ndarray :
-    """
-    Perform PSF interpolation and subtraction for a hypothetical source located
-    at y_test, and return the residual.
+# def model_and_subtract_target(
+#     scaled_img : np.ndarray,
+#     obs : observing_sequence.ObsSeq,
+#     y_test : int,
+#     y_ref : float,
+#     wl_ref_ind : int,
+#     psf_width : float = 5.
+# ) -> np.ndarray :
+#     """
+#     Perform PSF interpolation and subtraction for a hypothetical source located
+#     at y_test, and return the residual.
 
-    Parameters
-    ----------
-    scaled_img : np.ndarray
-      the wavelength-scaled image
-    obs : observing_sequence.ObsSeq
-      the ObsSeq object carrying the observation-related information
-    y_test : float
-      the position of a hypothetical source, in pixels, along the spatial axis of the provided image
-    y_ref : float
-      the reference position for the wavelength scaling
-    wl_ref_ind : int
-      the reference wavelength index for wavelength scaling
-    psf_width : float = 5.
-      the full width of the PSF along the spatial axis, used for masking
+#     Parameters
+#     ----------
+#     scaled_img : np.ndarray
+#       the wavelength-scaled image
+#     obs : observing_sequence.ObsSeq
+#       the ObsSeq object carrying the observation-related information
+#     y_test : float
+#       the position of a hypothetical source, in pixels, along the spatial axis of the provided image
+#     y_ref : float
+#       the reference position for the wavelength scaling
+#     wl_ref_ind : int
+#       the reference wavelength index for wavelength scaling
+#     psf_width : float = 5.
+#       the full width of the PSF along the spatial axis, used for masking
 
-    Output
-    ------
-    residual : np.ndarray
-      the result of scaled_img - psf_model
+#     Output
+#     ------
+#     residual : np.ndarray
+#       the result of scaled_img - psf_model
 
-    """
-    col_inds = np.arange(scaled_img.shape[1])
-    psf_model = scaled_img.copy()
-    scale_factors = obs.wlsol/obs.wlsol[wl_ref_ind]
-    scaled_rows = compute_scaled_psf_trace(y_test, y_ref, scale_factors)
-    unique_rows = np.arange(
-        np.floor(scaled_rows.min()), np.ceil(scaled_rows.max()),
-        dtype=int
-    )
-    masks = {}
-    for row_ind in unique_rows:
-        # compute the center and width of a scaled PSF projected across a row
-        mask_center, mask_width = calc_wl_mask_position(
-            y_test,
-            row_ind,
-            y_ref,
-            psf_width,
-            obs.wlsol.to(units.Angstrom).value,
-            wl_ref_ind,
-            obs.hdrs['occ']['sci']['CD1_1']
-        )
-        mask = make_row_mask(obs.wlsol.size, mask_center, mask_width)
-        masks[row_ind] = mask
-        if mask.all():
-            psf_model[row_ind] = scaled_img[row_ind][:]
-        interp_row = fit_under_psf(col_inds, scaled_img[row_ind], mask)
-        psf_model[row_ind] = interp_row
+#     """
+#     col_inds = np.arange(scaled_img.shape[1])
+#     psf_model = scaled_img.copy()
+#     scale_factors = obs.wlsol/obs.wlsol[wl_ref_ind]
+#     scaled_rows = compute_scaled_psf_trace(y_test, y_ref, scale_factors)
+#     unique_rows = np.arange(
+#         np.floor(scaled_rows.min()), np.ceil(scaled_rows.max()),
+#         dtype=int
+#     )
+#     masks = {}
+#     for row_ind in unique_rows:
+#         # compute the center and width of a scaled PSF projected across a row
+#         mask_center, mask_width = calc_wl_mask_position(
+#             y_test,
+#             row_ind,
+#             y_ref,
+#             psf_width,
+#             obs.wlsol.to(units.Angstrom).value,
+#             wl_ref_ind,
+#             obs.hdrs['occ']['sci']['CD1_1']
+#         )
+#         mask = make_row_mask(obs.wlsol.size, mask_center, mask_width)
+#         masks[row_ind] = mask
+#         if mask.all():
+#             psf_model[row_ind] = scaled_img[row_ind][:]
+#         interp_row = fit_under_psf(col_inds, scaled_img[row_ind], mask)
+#         psf_model[row_ind] = interp_row
 
-    residual = scaled_img - psf_model
-    return unique_rows, masks, psf_model, residual
+#     residual = scaled_img - psf_model
+#     return unique_rows, masks, psf_model, residual
 
-def make_row_mask(npix, center, width):
-    """
-    Parameters
-    ----------
-    npix : int
-      the number of pixels in the row
-    center : float
-      the center of the mask, in pixels
-    width : float
-      the full width of the mask, in pixels
+# def make_row_mask(npix, center, width):
+#     """
+#     Parameters
+#     ----------
+#     npix : int
+#       the number of pixels in the row
+#     center : float
+#       the center of the mask, in pixels
+#     width : float
+#       the full width of the mask, in pixels
 
-    Output
-    ------
-    mask : np.ndarray[bool]
-      a boolean array that is True *inside* the mask region and False elsewhere
-    """
-    if center < 0 or center > npix:
-        mask = np.ones(npix).astype(bool)
-    else:
-        mask_range = np.round(
-            [center-width/2, center+width/2]
-        ).astype(int)
-        mask = np.zeros(npix).astype(bool)
-        mask[mask_range[0]:mask_range[1]] = True
-    return mask
+#     Output
+#     ------
+#     mask : np.ndarray[bool]
+#       a boolean array that is True *inside* the mask region and False elsewhere
+#     """
+#     if center < 0 or center > npix:
+#         mask = np.ones(npix).astype(bool)
+#     else:
+#         mask_range = np.round(
+#             [center-width/2, center+width/2]
+#         ).astype(int)
+#         mask = np.zeros(npix).astype(bool)
+#         mask[mask_range[0]:mask_range[1]] = True
+#     return mask
 
 def mask_range_to_bool(mask_range : tuple[float, float], row_size : int):
     """
@@ -767,3 +781,5 @@ def mask_range_to_bool(mask_range : tuple[float, float], row_size : int):
     mask_ub = np.ceil(min([mask_ub, row_size])).astype(int)
     mask[mask_lb:mask_ub] = True
     return mask
+
+

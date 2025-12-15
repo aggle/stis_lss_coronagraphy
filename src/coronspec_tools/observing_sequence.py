@@ -91,6 +91,7 @@ class ObsSeq:
                 self.primary_spectrum_unc.value, median_clean
             ) * specunit
             self.occ_stamp.data = self.clean_stamp(self.occ_stamp.data, median_clean)
+            self.occ_stamp_unc.data = self.clean_stamp(self.occ_stamp_unc.data, median_clean)
             self.unocc_trace.data = self.clean_stamp(self.unocc_trace.data, median_clean)
         if contrast:
             # convert to units of contrast
