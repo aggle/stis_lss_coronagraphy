@@ -106,6 +106,13 @@ class ObsSeq:
             wcs=self.occ_wcs,
             copy=True,
         )
+        self.occ_stamp_unc = Cutout2D(
+                    self.occ_unc, 
+                    position=(self.occ_unc.shape[1]/2, self.occ_row),
+                    size=(width, self.occ_unc.shape[1]),
+                    wcs=self.occ_wcs,
+                    copy=True,
+                )
         self.occ_stamp_center = self.occ_row - self.occ_stamp.origin_original[1]
 
 
@@ -171,10 +178,12 @@ class ObsSeq:
             with warnings.catch_warnings():
                 warnings.simplefilter('ignore', AstropyWarning)
                 self.unocc_wcs = WCS(hdulist[1].header)
-            self.unocc_img = hdulist[1].data.copy()
+            self.unocc_img = hdulist['SCI'].data.copy()
+            self.unocc_unc = hdulist['ERR'].data.copy()
             filetype = unocc_file[:-5].split("_")[-1]
             if filetype == 'sx2':
                 self.unocc_img = crop_sx2(self.unocc_img, self.wlsol.size)
+                self.unocc_unc = crop_sx2(self.unocc_unc, self.wlsol.size)
             self.offset, self.unocc_row = ctfs.find_unocc_pos(hdulist, self.wlsol)
             if filetype == 'sx2':
                 self.unocc_row -= 88.5
@@ -187,11 +196,13 @@ class ObsSeq:
         with fits.open(occ_file) as hdulist:
             with warnings.catch_warnings():
                 warnings.simplefilter('ignore')
-                self.occ_wcs = WCS(hdulist[1].header)
-            self.occ_img = hdulist[1].data.copy()
+                self.occ_wcs = WCS(hdulist['SCI'].header)
+            self.occ_img = hdulist['SCI'].data.copy()
+            self.occ_unc = hdulist['ERR'].data.copy()
             filetype = occ_file[:-5].split("_")[-1]
             if filetype == 'sx2':
                 self.occ_img = crop_sx2(self.occ_img, self.wlsol.size)
+                self.occ_unc = crop_sx2(self.occ_unc, self.wlsol.size)
             return
 
     def clean_stamp(self, img, width=10):
