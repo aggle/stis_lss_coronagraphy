@@ -15,14 +15,32 @@ class SDI:
         A class that helps with SDI operations. Using a class is helpful
         because you can track information like the reference wavelength
         """
+        self.initialize()
         self.obs = obs
         self.wl_pixscale = obs.hdrs['occ']['sci']['CD1_1']
         self.ref_wl_ind = ref_wl_ind
-        if self.ref_wl_ind == -1:
-            self.ref_wl_ind = len(obs.wlsol)-1
         self.scale_factors = self.obs.wlsol[self.ref_wl_ind]/self.obs.wlsol
         self.scaled_stamp = np.zeros_like(obs.occ_stamp.data)
         self.psf_halfwidth = psf_halfwidth
+
+    def initialize(self):
+        """Instantiate everything with a setter/getter structure"""
+        self._ref_wl_ind = None
+
+
+    @property
+    def ref_wl_ind(self) -> int:
+        return self._ref_wl_ind
+    @ref_wl_ind.setter
+    def ref_wl_ind(self, newval) -> None:
+        # you may want to use this to trigger recomputing the scaled stamps
+        if newval >= self.obs.wlsol.size:
+            print(f"Error: Index too large ({newval} > {self.obs.wlsol.size-1})")
+        if newval < 0:
+            newval = len(self.obs.wlsol) + newval
+        self._ref_wl_ind = newval
+        return
+
 
 
     def compute_scaled_stamp(
@@ -61,7 +79,7 @@ class SDI:
         trace_rows = self.check_trace_rows(y)
         scaled_region = self.scaled_stamp[trace_rows]
         psf_model = self.model_target_row(target_row_ind, psf_halfwidth)
-        return scaled_region - psf_model
+        return scaled_region - psf_model.data
 
     def descale_trace(self, scaled_img, y_vals, y_range):
         """
@@ -93,7 +111,7 @@ class SDI:
             self,
             target_row_ind,
             psf_halfwidth = None
-    ):
+    ) -> np.ma.masked_array:
         """
         Generate a model for the given row of an unscaled stamp
 
@@ -116,11 +134,12 @@ class SDI:
             self.scale_factors
         )
         trace_rows = self.check_trace_rows(y)
-        psf_model = np.zeros((trace_rows.size, x.size))
+        psf_model = np.ma.masked_array(np.zeros((trace_rows.size, x.size)))
         for i, scaled_row_ind in enumerate(trace_rows):
             model_row = self.model_scaled_row(target_row_ind, scaled_row_ind, psf_halfwidth)
             psf_model[i] = model_row
         return psf_model
+
 
     def check_trace_rows(self, trace_y):
         # make sure that the trace row indices are valid
@@ -130,7 +149,6 @@ class SDI:
         return trace_rows
 
 
-
     def model_scaled_row(
         self,
         target_row_ind : int,
@@ -138,7 +156,7 @@ class SDI:
         psf_halfwidth = None,
         fit_pad : int = 200,
         fit_poly : float = 2,
-    ) -> np.ndarray:
+    ) -> np.ma.masked_array:
         """
         Model the PSF under the hypothetical companion from a target row, at a single scaled row
         target_row_ind : int
@@ -165,6 +183,7 @@ class SDI:
         scaled_row = self.scaled_stamp[scaled_row_ind]
         masked_row = np.ma.masked_array(scaled_row, mask)
         psf_model = self._fit_masked_data(masked_row, fit_poly, fit_pad)
+        psf_model = np.ma.masked_array(psf_model, mask=~masked_row.mask)
         return psf_model
 
     def _compute_row_mask(self, target_row, scaled_row, psf_halfwidth=None) -> tuple[float, float]:
@@ -302,6 +321,9 @@ class SDI:
             i: self.model_target_row(i)
             for i in target_row_indices
         })
+        # split the model data and masks
+        target_row_masks = target_row_models.apply(lambda el: el.mask)
+        target_row_models = target_row_models.apply(lambda el: el.data)
         # data - model
         target_row_residuals = target_row_stamps - target_row_models
         # put it all in one organized dataframe
@@ -309,6 +331,7 @@ class SDI:
             'trace': target_row_traces,
             'row_indices': target_row_model_rows,
             'scaled_stamp': target_row_stamps,
+            'stamp_mask': target_row_masks,
             'model': target_row_models,
             'residual': target_row_residuals,
         }, axis=1)
