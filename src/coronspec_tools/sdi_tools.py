@@ -10,10 +10,29 @@ from astropy.wcs import WCS
 from coronspec_tools import observing_sequence
 
 class SDI:
-    def __init__(self, obs: observing_sequence.ObsSeq, ref_wl_ind = -1, psf_halfwidth=5):
+    def __init__(
+            self,
+            obs: observing_sequence.ObsSeq,
+            ref_wl_ind = -1,
+            psf_halfwidth=5,
+            stamp_to_subtract : np.ndarray | None = None
+    ):
         """
         A class that helps with SDI operations. Using a class is helpful
         because you can track information like the reference wavelength
+
+        Parameters
+        ----------
+        obs: observing_sequence.ObsSeq
+          an ObsSeq instance
+        ref_wl_ind = -1,
+          This wavelength index will be used as the anchor for scaling
+        psf_halfwidth=5
+          Half-size of the PSF 
+        stamp_to_subtract : np.ndarray | None = None
+          if provided, do PSF subtraction and scaling on this data instead of
+          obs.unocc_stamp. Must have same shape as obs.unocc_stamp.data
+        
         """
         self.initialize()
         self.obs = obs
