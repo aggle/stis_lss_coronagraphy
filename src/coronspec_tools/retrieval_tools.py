@@ -99,6 +99,34 @@ class Retriever:
         template[lb:ub] = template[lb:ub] + trace[trace_trim[0]:trace_trim[1]]
         return template
 
+    def crosscorr(self, data : np.ndarray, model : np.ndarray) -> float:
+        """
+        Compute the cross-correlation of the signal with the forward-modeled injection spectrum
+
+        Parameters
+        ----------
+        data : np.ndarray
+          1-d array that may contain signal
+        model : np.ndarray
+          1-d array of a model that may be in the data
+
+        Output
+        ------
+        cc : float
+          the dot product of data and model (mean-subtracted)
+        """
+        data = np.array(data)
+        model = np.array(model)
+        # mask nans 
+        wherenan = np.isnan(data) | np.isnan(model)
+        data = data[~wherenan].copy()
+        model = model[~wherenan].copy()
+        cc = np.dot(
+            data - np.mean(data),
+            model - np.mean(model)
+        )/(data.size * model.size)**0.5
+        return cc
+
     def inject_and_process(
         self,
         template_img : np.ndarray | None,
