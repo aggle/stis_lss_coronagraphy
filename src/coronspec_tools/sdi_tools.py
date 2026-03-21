@@ -41,6 +41,10 @@ class SDI:
         self.scale_factors = self.obs.wlsol[self.ref_wl_ind]/self.obs.wlsol
         self.scaled_stamp = np.zeros_like(obs.occ_stamp.data)
         self.psf_halfwidth = psf_halfwidth
+        self.unsub_data  = self.obs.occ_stamp.data
+        if stamp_to_subtract is not None:
+            self.unsub_data = stamp_to_subtract
+
 
     def initialize(self):
         """Instantiate everything with a setter/getter structure"""
@@ -61,7 +65,6 @@ class SDI:
         return
 
 
-
     def compute_scaled_stamp(
             self,
             ref_wl_ind : int | None = None,
@@ -71,7 +74,8 @@ class SDI:
         if ref_wl_ind is None:
             ref_wl_ind = self.ref_wl_ind
         # if stamp is None:
-        stamp = self.obs.occ_stamp.data
+        # stamp = self.obs.occ_stamp.data
+        stamp = self.unsub_data
         stamp_unc = self.obs.occ_stamp_unc.data
         # if stamp_center is None:
         stamp_center = self.obs.occ_stamp_center
