@@ -32,7 +32,15 @@ class Retriever:
 
     def flatten_unocc_trace(self, zero_max : bool = False) -> np.ndarray:
         """
-        For the non-rectified images, the trace usually isn't straight. Straighten it out before you use it for injection
+        For the non-rectified images, the trace usually isn't straight.
+        Straighten it out before you use it for injection
+
+        Parameters
+        ----------
+        zero_max : bool = False
+          Zero an outlier pixel. If True, the largest pixel is set to 0.
+          This argument is particular to the HD-283593 dataset.
+
         """
         pad = 3
         width = self.obs.unocc_trace.data.shape[0] + 2*pad
