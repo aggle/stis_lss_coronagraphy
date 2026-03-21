@@ -71,7 +71,7 @@ class Retriever:
             scale : float = 1.
     ):
         """
-        Renormalize the trace to have the shape of the spectrum, while preserving the total flux?
+        Renormalize the trace to have the shape of the given input spectrum, while preserving the total flux?
         Spectrum must have same units as self.obs.primary.spectrum_flux
         """
         # convert spectrum to counts
@@ -135,26 +135,62 @@ class Retriever:
         spectrum : np.ndarray,
         scale : float,
     ):
+        """
+        Wrapper to:
+        1. reshape the spectrum to the desired shape
+        2. set the flux scale,
+        3. create an image with the trace injected
+        """
         if template_img is None:
             template_img = self.template_array.copy()
         if template_trace is None:
             template_trace = self.template_trace
         trace = self.renormalize_trace(template_trace, spectrum, scale)
-        template = self.add_trace_to_template(trace, inj_row, template_img)
+        trace = template_trace * scale
+        inj_template = self.add_trace_to_template(trace, inj_row, template_img)
         self.inj_trace = trace
-        self.inj_img = template
-        injsdi = sdi_tools.SDI(self.obs, self.sdi.ref_wl_ind, self.sdi.psf_halfwidth)
-        injsdi.compute_scaled_stamp(
-            stamp=template, stamp_center = self.obs.occ_stamp_center
+        self.inj_img = inj_template
+        # create an SDI instance with the injected signal
+        self.inj_sdi = sdi_tools.SDI(
+            obs = self.obs,
+            ref_wl_ind = self.sdi.ref_wl_ind,
+            psf_halfwidth = self.sdi.psf_halfwidth,
+            stamp_to_subtract = self.inj_img
         )
-        injsdi.generate_model_results_df(inj_row, inj_row)
-        injsdi.model_results['signal'] = injsdi.model_results.apply(
-            lambda row: injsdi.descale_trace(
+        self.inj_sdi.compute_scaled_stamp(
+            stamp=inj_template, stamp_center = self.obs.occ_stamp_center
+        )
+        self.inj_sdi.generate_model_results_df(inj_row, inj_row)
+        # extract the signal in the given row by descaling the same
+        self.inj_sdi.model_results['signal'] = self.inj_sdi.model_results.apply(
+            lambda row: self.inj_sdi.descale_trace(
                 row['residual'], row['trace'], row['row_indices'][[0, -1]]
             ),
             axis=1
         )
-        self.inj_results = injsdi.model_results.copy()
+        # also descale the model of the stellar PSF at that row
+        self.inj_sdi.model_results['model_descaled'] = self.inj_sdi.model_results.apply(
+            lambda row: self.inj_sdi.descale_trace(
+                row['model'], row['trace'], row['row_indices'][[0, -1]]
+            ),
+            axis=1
+        )
+        # get the shape of the expected signal by applying the PSF model to the template PSF
+        self.inj_sdi.model_results['fm_injection'] = self.inj_sdi.model_results.apply(
+            lambda row: self.inj_trace[np.floor(self.inj_trace.shape[0]/2).astype(int)] - row['model_descaled'],
+            axis=1
+        )
+        # compute the correlation between the residual and the forward-modeled signal
+        self.inj_sdi.model_results['fm_ccorr'] = self.inj_sdi.model_results.apply(
+            lambda row: self.crosscorr(row['signal'], row['fm_injection']),
+            axis=1
+        )
+        # compute the correlation between the residual and the data without injection
+        self.inj_sdi.model_results['fm_ccorr_nosignal'] = self.inj_sdi.model_results.apply(
+            lambda row: self.crosscorr(self.obs.occ_stamp.data[row.name], row['fm_injection']),
+            axis=1
+        )
+        self.inj_results = self.inj_sdi.model_results.copy()
 
 
 
