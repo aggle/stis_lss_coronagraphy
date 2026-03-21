@@ -181,7 +181,7 @@ class ObsSeq:
                 self.unocc_wcs = WCS(hdulist[1].header)
             self.unocc_img = hdulist['SCI'].data.copy()
             self.unocc_unc = hdulist['ERR'].data.copy()
-            filetype = unocc_file[:-5].split("_")[-1]
+            filetype = str(unocc_file)[:-5].split("_")[-1]
             if filetype == 'sx2':
                 self.unocc_img = crop_sx2(self.unocc_img, self.wlsol.size)
                 self.unocc_unc = crop_sx2(self.unocc_unc, self.wlsol.size)
@@ -200,7 +200,7 @@ class ObsSeq:
                 self.occ_wcs = WCS(hdulist['SCI'].header)
             self.occ_img = hdulist['SCI'].data.copy()
             self.occ_unc = hdulist['ERR'].data.copy()
-            filetype = occ_file[:-5].split("_")[-1]
+            filetype = str(occ_file)[:-5].split("_")[-1]
             if filetype == 'sx2':
                 self.occ_img = crop_sx2(self.occ_img, self.wlsol.size)
                 self.occ_unc = crop_sx2(self.occ_unc, self.wlsol.size)
