@@ -176,13 +176,6 @@ class Retriever:
             ),
             axis=1
         )
-        # also descale the model of the stellar PSF at that row
-        self.inj_sdi.model_results['model_descaled'] = self.inj_sdi.model_results.apply(
-            lambda row: self.inj_sdi.descale_trace(
-                row['model'], row['trace'], row['row_indices'][[0, -1]]
-            ),
-            axis=1
-        )
         # get the shape of the expected signal by applying the PSF model to the template PSF
         self.inj_sdi.model_results['fm_injection'] = self.inj_sdi.model_results.apply(
             lambda row: self.inj_trace[np.floor(self.inj_trace.shape[0]/2).astype(int)] - row['model_descaled'],

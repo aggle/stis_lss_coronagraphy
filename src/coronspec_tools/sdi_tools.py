@@ -336,11 +336,13 @@ class SDI:
         # these are the rows we will investigate for signal
         target_row_indices = np.arange(row_lo, row_hi+1)
         # these are the row coordinates in scaled space for a hypothetical source in each of those rows
-        target_row_traces = pd.Series({i: compute_scaled_psf_trace(
-            i, 
-            self.obs.occ_stamp_center,
-            self.scale_factors
-        ) for i in target_row_indices})
+        target_row_traces = pd.Series({
+            i: compute_scaled_psf_trace(
+                i, 
+                self.obs.occ_stamp_center,
+                self.scale_factors
+            ) for i in target_row_indices
+        })
         # get the unique and valid row indices for each trace
         target_row_model_rows = target_row_traces.apply(self.check_trace_rows)
         # these are the scaled stamp regions covered by the trace
@@ -357,6 +359,16 @@ class SDI:
             i: self.model_target_row(i, model_kwargs=model_kwargs)
             for i in target_row_indices
         })
+        # also descale the model of the stellar PSF at that row
+        target_row_models_descaled = pd.Series({
+            i: self.descale_trace(
+                target_row_models[i],
+                target_row_traces[i],
+                target_row_indices[[0, -1]]
+            )
+            for i in target_row_indices
+        })
+
         # split the model data and masks
         target_row_masks = target_row_models.apply(lambda el: el.mask)
         target_row_models = target_row_models.apply(lambda el: el.data)
@@ -370,9 +382,16 @@ class SDI:
             'scaled_stamp_unc' : target_row_stamp_uncs,
             'stamp_mask': target_row_masks,
             'model': target_row_models,
+            'model_descaled': target_row_models_descaled,
             'residual': target_row_residuals,
         }, axis=1)
         return
+
+    def generate_psf_model(self):
+        """
+        Use the model_resutls dataframe to make a PSF model image
+        """
+        pass
 
 def rescale_img(
     img : np.ndarray,
