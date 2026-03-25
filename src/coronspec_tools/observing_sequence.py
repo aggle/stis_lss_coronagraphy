@@ -6,7 +6,9 @@ import warnings
 
 import numpy as np
 
+
 from astropy import units
+from astropy import stats
 from astropy.io import fits
 from astropy.nddata import Cutout2D
 from astropy.wcs import WCS, FITSFixedWarning
@@ -75,8 +77,8 @@ class ObsSeq:
         self.occ_row, self.occ_bar = ctfs.find_star_from_wcs(
             sx1_file, unocc_file, occ_file,
         )
-        if str(occ_file)[:-5].split("_")[-1] == 'sx2':
-            self.occ_row -= 88.5
+        # if str(occ_file)[:-5].split("_")[-1] == 'sx2':
+        #     self.occ_row -= 88.5
         self.occ_sep = self.occ_wcs.pixel_to_world(
             0, self.occ_row
         )[1]
@@ -182,13 +184,13 @@ class ObsSeq:
             self.unocc_img = hdulist['SCI'].data.copy()
             self.unocc_unc = hdulist['ERR'].data.copy()
             filetype = str(unocc_file)[:-5].split("_")[-1]
-            if filetype == 'sx2':
-                self.unocc_img = crop_sx2(self.unocc_img, self.wlsol.size)
-                self.unocc_unc = crop_sx2(self.unocc_unc, self.wlsol.size)
+            # if filetype == 'sx2': # crop the sx2 exposures
+            #     self.unocc_img = crop_sx2(self.unocc_img, self.wlsol.size)
+            #     self.unocc_unc = crop_sx2(self.unocc_unc, self.wlsol.size)
             self.offset, self.unocc_row = ctfs.find_unocc_pos(hdulist, self.wlsol)
-            if filetype == 'sx2':
-                self.unocc_row -= 88.5
-                print(self.unocc_row)
+            # if filetype == 'sx2':
+            #     self.unocc_row -= 88.5
+            #     print(self.unocc_row)
         self.unocc_trace = self.get_unocc_trace(trace_width)
         return
 
@@ -200,15 +202,27 @@ class ObsSeq:
                 self.occ_wcs = WCS(hdulist['SCI'].header)
             self.occ_img = hdulist['SCI'].data.copy()
             self.occ_unc = hdulist['ERR'].data.copy()
+            self.occ_dq = hdulist['DQ'].data.copy()
             filetype = str(occ_file)[:-5].split("_")[-1]
-            if filetype == 'sx2':
-                self.occ_img = crop_sx2(self.occ_img, self.wlsol.size)
-                self.occ_unc = crop_sx2(self.occ_unc, self.wlsol.size)
+            # if filetype == 'sx2': # crop the sx2 exposures
+            #     self.occ_img = crop_sx2(self.occ_img, self.wlsol.size)
+            #     self.occ_unc = crop_sx2(self.occ_unc, self.wlsol.size)
+            #     self.occ_dq = crop_sx2(self.occ_dq, self.wlsol.size)
             return
 
-    def clean_stamp(self, img, width=10):
-        """Apply median filtering to a 2-D spectral image"""
-        return ctutils.median_filter_image(img, width)
+    def clean_stamp(self, img, width=10, std_thresh=100):
+        """
+        Median-filter the outlier pixels
+        """
+        # avg, std = stats.sigma_clipped_stats(self.occ_stamp.data)
+        # thresh = avg + std_thresh*std
+        """Apply filtering to a 2-D spectral image"""
+        filtimg = ctutils.median_filter_image(img, width)
+        # filtimg = np.array([
+        #     ctutils.savgol_filter(row, width=width, order=3)
+        # ])
+        return filtimg
+        
 
 
     def get_unocc_trace(self, trace_width):
