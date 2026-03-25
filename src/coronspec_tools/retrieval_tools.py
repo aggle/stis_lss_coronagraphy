@@ -209,3 +209,21 @@ class Retriever:
 
 
 
+
+def box_extraction(
+        img : np.ndarray,
+        row_ind : int,
+        box_halfsize : int = 3,
+        col_width : int = 1,
+) -> np.ndarray:
+    """
+    Perform a box extraction of signal centered at the given row index
+    """
+    ncols = img.shape[1]
+    spectrum = np.zeros(ncols)*np.nan
+    box = img[row_ind - box_halfsize : row_ind + box_halfsize+1]
+    for c in range(ncols):
+        c_lo = max([0, c-col_width])
+        c_hi = min([c+col_width+1, ncols])
+        spectrum[c] = np.nanmean(box[:, c_lo:c_hi])
+    return spectrum
