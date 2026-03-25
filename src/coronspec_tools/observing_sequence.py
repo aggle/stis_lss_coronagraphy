@@ -116,6 +116,13 @@ class ObsSeq:
                     wcs=self.occ_wcs,
                     copy=True,
                 )
+        self.occ_stamp_dq = Cutout2D(
+                    self.occ_dq, 
+                    position=(self.occ_dq.shape[1]/2, self.occ_row),
+                    size=(width, self.occ_dq.shape[1]),
+                    wcs=self.occ_wcs,
+                    copy=True,
+                )
         self.occ_stamp_center = self.occ_row - self.occ_stamp.origin_original[1]
 
 
