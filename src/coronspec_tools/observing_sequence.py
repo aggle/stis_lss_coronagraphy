@@ -235,19 +235,19 @@ class ObsSeq:
         )
         return trace
 
-    def convert_to_contrast(self):
+    def convert_to_contrast(self) -> None:
         """Converts all relevant data to units of contrast"""
-        # spectrum = self.primary_spectrum.value
+        spectrum = self.primary_spectrum.value # counts/sec
+        # first, convert to counts/sec
         exptime = self.hdrs['unocc']['sci']['exptime']
-        spectrum = self.unocc_trace.data.sum(axis=0) / exptime
-        self.unocc_img = self.unocc_img / exptime
-        exptime = self.hdrs['occ']['sci']['exptime']
-        self.occ_img = self.occ_img / exptime
+        # spectrum = self.unocc_trace.data.sum(axis=0) / exptime
+        self.unocc_img = self.unocc_img / exptime / spectrum
+        self.unocc_trace.data = self.unocc_trace.data / exptime / spectrum
 
-        self.unocc_img = self.unocc_img / spectrum
-        self.unocc_trace.data = self.unocc_trace.data / spectrum
-        self.occ_img = self.occ_img / spectrum
-        self.occ_stamp.data = self.occ_stamp.data / spectrum
+        exptime = self.hdrs['occ']['sci']['exptime']
+        self.occ_img = self.occ_img / exptime / spectrum
+        self.occ_stamp.data = self.occ_stamp.data / exptime / spectrum
+
         return
 
     def contrast_counts2flux(self, signal):
