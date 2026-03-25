@@ -359,39 +359,44 @@ class SDI:
             i: self.model_target_row(i, model_kwargs=model_kwargs)
             for i in target_row_indices
         })
-        # also descale the model of the stellar PSF at that row
-        target_row_models_descaled = pd.Series({
-            i: self.descale_trace(
-                target_row_models[i],
-                target_row_traces[i],
-                target_row_indices[[0, -1]]
-            )
-            for i in target_row_indices
-        })
 
         # split the model data and masks
         target_row_masks = target_row_models.apply(lambda el: el.mask)
         target_row_models = target_row_models.apply(lambda el: el.data)
+
         # data - model
         target_row_residuals = target_row_stamps - target_row_models
+
         # put it all in one organized dataframe
-        self.model_results = pd.concat({
+        model_results = pd.concat({
             'trace': target_row_traces,
             'row_indices': target_row_model_rows,
             'scaled_stamp': target_row_stamps,
             'scaled_stamp_unc' : target_row_stamp_uncs,
             'stamp_mask': target_row_masks,
             'model': target_row_models,
-            'model_descaled': target_row_models_descaled,
             'residual': target_row_residuals,
         }, axis=1)
+
+        # also descale the model of the stellar PSF for each row 
+        model_results['model_descaled'] = model_results.apply(
+            lambda row: self.descale_trace(
+                row['model'], row['trace'], row['row_indices'][[0, -1]]
+            ),
+            axis=1
+        )
+
+        # assign it as an object attribute
+        self.model_results = model_results
         return
 
-    def generate_psf_model(self):
+    def assemble_psf_model_image(self) -> np.ndarray:
         """
-        Use the model_resutls dataframe to make a PSF model image
+        Use the model_results dataframe to make a PSF model image
         """
-        pass
+        psf_model = np.zeros(self.obs.occ_stamp.data.shape)
+        psf_model[self.model_results.index] += np.stack(self.model_results['model_descaled'])
+        return psf_model
 
 def rescale_img(
     img : np.ndarray,
