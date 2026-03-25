@@ -5,6 +5,8 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 
+from scipy.signal import savgol_filter
+
 from astropy.io import fits
 from astropy import units
 from astropy.stats import sigma_clipped_stats
@@ -196,3 +198,27 @@ def median_filter_image(img, window=5):
     for row in np.arange(filtered_img.shape[0]):
         filtered_img[row] = rolling_median(img[row], window)
     return filtered_img
+
+
+def mean_replace(img, coord):
+    """
+    Mean replace the value at coord with the avg of the neighboring pixels
+    """
+    # skip values near edges
+    # if any([i < 2 for i in coord]): 
+    if coord[1] < 2:
+        return
+    if (coord[0] > img.shape[0]-3) or (coord[1] > img.shape[1]-3):
+        return
+
+    box = img[coord[0], coord[1]-2:coord[1]+3]
+    mask = np.array(
+        [True, True, False, True, True],
+    )
+    avg = np.nanmean(box[mask])
+    print(coord, img[coord[0], coord[1]], avg)
+    img[coord[0], coord[1]] = avg
+    return
+
+
+
