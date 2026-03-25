@@ -132,7 +132,7 @@ class Retriever:
         cc = np.dot(
             data - np.mean(data),
             model - np.mean(model)
-        )/(data.size * model.size)**0.5
+        )#/(data.size * model.size)**0.5
         return cc
 
     def inject_and_process(
@@ -148,12 +148,25 @@ class Retriever:
         1. reshape the spectrum to the desired shape
         2. set the flux scale,
         3. create an image with the trace injected
+
+        Parameters
+        ----------
+        template_img: np.ndarray
+          The stellar PSF image that the fake companion will be injected into
+        inj_row : int
+          the row in template_img that will be the center of the fake PSF
+        template_trace : np.ndarray
+          2-D array of the fake companion PSF
+        spectrum: np.ndarray
+          1-D shape of the spectrum you want
+        scale : float
+          multiple the template trace by this factor
         """
         if template_img is None:
             template_img = self.template_array.copy()
         if template_trace is None:
             template_trace = self.template_trace
-        trace = self.renormalize_trace(template_trace, spectrum, scale)
+        # trace = self.renormalize_trace(template_trace, spectrum, scale)
         trace = template_trace * scale
         inj_template = self.add_trace_to_template(trace, inj_row, template_img)
         self.inj_trace = trace
