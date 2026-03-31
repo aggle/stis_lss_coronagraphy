@@ -7,7 +7,10 @@ import pandas as pd
 from astropy import units
 from astropy.wcs import WCS
 
-from coronspec_tools import observing_sequence
+from coronspec_tools import (
+    observing_sequence,
+    utils as ctutils,
+)
 
 class SDI:
     def __init__(
@@ -174,7 +177,7 @@ class SDI:
         scaled_row_ind : int,
         psf_halfwidth = None,
         fit_pad : int = 200,
-        fit_poly : float = 2,
+        fit_poly : int = 2,
     ) -> np.ma.masked_array:
         """
         Model the PSF under the hypothetical companion from a target row, at a single scaled row
@@ -199,9 +202,13 @@ class SDI:
         mask_range = self._compute_row_mask(target_row_ind, scaled_row_ind, psf_halfwidth)
         mask = mask_range_to_bool(mask_range, self.obs.wlsol.size)
         # model the row
-        scaled_row = self.scaled_stamp[scaled_row_ind]
+        # apply a Savitzky-Golay filter to the row
+        savgol_params = dict(window_length=100, polyorder=2)
+        scaled_row = ctutils.savgol_filter(self.scaled_stamp[scaled_row_ind], **savgol_params)
+        scaled_unc = ctutils.savgol_filter(self.scaled_stamp_unc[scaled_row_ind], **savgol_params)
+
         masked_row = np.ma.masked_array(scaled_row, mask)
-        masked_unc = np.ma.masked_array(self.scaled_stamp_unc[scaled_row_ind], mask=mask)
+        masked_unc = np.ma.masked_array(scaled_unc, mask=mask)
         psf_model = self._fit_masked_data(masked_row, fit_poly, fit_pad, masked_unc)
         psf_model = np.ma.masked_array(psf_model, mask=~masked_row.mask)
         return psf_model
