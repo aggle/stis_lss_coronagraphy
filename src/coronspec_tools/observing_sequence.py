@@ -174,8 +174,8 @@ class ObsSeq:
                 np.squeeze(table[colname]),
                 unit=colunit
             )
-            self.throughput_corr = self.primary_spectrum_flux / self.primary_spectrum
-            self.throughput_corr_unc = self.throughput_corr * np.sqrt(
+            self.spectral_response_function = self.primary_spectrum_flux / self.primary_spectrum
+            self.spectral_response_function_unc = self.spectral_response_function * np.sqrt(
                 (self.primary_spectrum_flux_unc/self.primary_spectrum_flux)**2 +\
                 (self.primary_spectrum_unc/self.primary_spectrum)**2
             )
@@ -259,7 +259,7 @@ class ObsSeq:
 
     def contrast_counts2flux(self, signal):
         """Convert a row of signal from contrast units to flux"""
-        return signal * self.throughput_corr
+        return signal * self.spectral_response_function
 
     def get_bar_bounds(self) -> tuple[float, float]:
         halfwidth = (0.25*units.arcsec).to(units.deg)
