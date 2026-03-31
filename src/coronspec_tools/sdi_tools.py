@@ -340,6 +340,9 @@ class SDI:
         model_kwargs : these get passed along to model_scaled_row
 
         """
+        # remember the range of rows
+        self.row_lo = row_lo
+        self.row_hi = row_hi
         # these are the rows we will investigate for signal
         target_row_indices = np.arange(row_lo, row_hi+1)
         # these are the row coordinates in scaled space for a hypothetical source in each of those rows
