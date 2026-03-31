@@ -70,7 +70,7 @@ class ObsSeq:
         self.process_specfile(sx1_file)
         # unocculted
         self.process_unocculted(unocc_file, trace_width)
-        # unocculted
+        # occulted
         self.process_occulted(occ_file)
 
         # process data
@@ -97,6 +97,7 @@ class ObsSeq:
             self.unocc_trace.data = self.clean_stamp(self.unocc_trace.data, median_clean)
         if contrast:
             # convert to units of contrast
+            self.is_contrast = True
             self.convert_to_contrast()
         return None
 
