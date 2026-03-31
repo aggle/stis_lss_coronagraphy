@@ -67,18 +67,21 @@ def find_unocc_pos(hdulist, wlsol=None):
         wlsol = wcs.pixel_to_world(
             np.arange(img.size),
             np.ones(img.size)*wcs.wcs.crpix[1]
-        )
+        )[0]
     peak_wl, peak_offset = [], []
-    for wl_index in np.arange(5, 201, 10):
+    for wl_index in np.arange(50, 201, 10):
         wl = wlsol[wl_index] 
         peak_col = wcs.world_to_pixel_values(
             wl,
             0*units.deg,
         )[0]
-        peak_row = interp_peak(hdulist, int(peak_col))
-        offset = wcs.pixel_to_world(
-            peak_col, peak_row
-        )[1]
+        try:
+            peak_row = interp_peak(hdulist, int(peak_col))
+            offset = wcs.pixel_to_world(
+                peak_col, peak_row
+            )[1]
+        except ValueError:
+            continue
         peak_wl.append(wl)
         peak_offset.append(offset)
     # fit a polynomial to the peak positions
