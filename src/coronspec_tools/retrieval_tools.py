@@ -124,7 +124,7 @@ class Retriever:
         cc = np.dot(
             data - np.mean(data),
             model - np.mean(model)
-        )#/(data.size * model.size)**0.5
+        )
         return cc
 
     def inject_and_process(
@@ -132,8 +132,10 @@ class Retriever:
         template_img : np.ndarray | None,
         inj_row : int,
         template_trace : np.ndarray | None,
-        spectrum : np.ndarray,
-        scale : float,
+        spectrum : np.ndarray = 1.,
+        scale : float = 1.,
+        psf_modeling_args : dict = {},
+        construct_full_psf : bool = False,
     ):
         """
         Wrapper to:
@@ -153,16 +155,18 @@ class Retriever:
           1-D shape of the spectrum you want
         scale : float
           multiple the template trace by this factor
+        construct_full_psf : bool = False
+          if True, generate PSF models for all rows, not just the injected row
+
         """
         if template_img is None:
             template_img = self.template_array.copy()
         if template_trace is None:
             template_trace = self.template_trace
-        # trace = self.renormalize_trace(template_trace, spectrum, scale)
-        trace = template_trace * scale
-        inj_template = self.add_trace_to_template(trace, inj_row, template_img)
+        trace = self.renormalize_trace(template_trace, spectrum, scale)
+        # self.inj_trace = template_trace * scale * spectrum
         self.inj_trace = trace
-        self.inj_img = inj_template
+        self.inj_img = self.add_trace_to_template(self.inj_trace, inj_row, template_img)
         # create an SDI instance with the injected signal
         self.inj_sdi = sdi_tools.SDI(
             obs = self.obs,
@@ -171,9 +175,17 @@ class Retriever:
             stamp_to_subtract = self.inj_img
         )
         self.inj_sdi.compute_scaled_stamp(
-            stamp=inj_template, stamp_center = self.obs.occ_stamp_center
+            stamp=self.inj_img, stamp_center = self.obs.occ_stamp_center
         )
-        self.inj_sdi.generate_model_results_df(inj_row, inj_row)
+
+        self.inj_sdi.generate_model_results_df(
+            inj_row, inj_row, model_kwargs=psf_modeling_args
+        )
+        if construct_full_psf:
+            self.inj_sdi.generate_model_results_df(
+                self.sdi.row_lo, self.sdi.row_hi, model_kwargs=psf_modeling_args
+            )
+
         # extract the signal in the given row by descaling the same
         self.inj_sdi.model_results['signal'] = self.inj_sdi.model_results.apply(
             lambda row: self.inj_sdi.descale_trace(
