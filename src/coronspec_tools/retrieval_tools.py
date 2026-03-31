@@ -22,18 +22,14 @@ class Retriever:
         self.sdi = sdi
         self.obs = sdi.obs
         self.template_array = sdi.obs.occ_stamp.data.copy()
-        self.template_trace = self.flatten_unocc_trace()
+        # self.template_trace = sdi.obs.unocc_trace.data.copy()
+        self.template_trace = self.straighten_unocc_trace(zero_max=True)
 
-    def compute_throughput_map(self):
-        """
-        add a normalized signal at each row to an empty array and run the scaling-subtracting-descaling algorithm
-        """
-        pass
 
-    def flatten_unocc_trace(self, zero_max : bool = False) -> np.ndarray:
+    def straighten_unocc_trace(self, zero_max : bool = False) -> np.ndarray:
         """
         For the non-rectified images, the trace usually isn't straight.
-        Straighten it out before you use it for injection
+        Straighten it out before you use it for injection.
 
         Parameters
         ----------
@@ -50,7 +46,7 @@ class Retriever:
         cols = np.arange(new_trace.shape[1])
         line_func = np.polynomial.Polynomial.fit(
             cols, new_trace.argmax(axis=0),
-            1
+            2
         )
         centers = line_func(cols)
         trace_center = np.floor(new_trace.shape[0]/2).astype(int)
@@ -59,17 +55,8 @@ class Retriever:
         for col, shift in zip(new_trace.T, col_shifts):
             shifted_cols.append(ndimage.shift(col, shift, mode='mirror'))
         flat_trace = np.stack(shifted_cols).T[pad:-pad]
-        # normalize each column
-        flat_trace = flat_trace/flat_trace.sum(axis=0)
-        # normalize the flux to the unocculted trace flux
-        unocc_norm = self.obs.unocc_trace.data.sum()
-        flat_norm = flat_trace.sum()
-        flat_trace *= unocc_norm/flat_norm
-
-        # # shift and scale to match the original trace
-        # offset = self.obs.unocc_trace.data.mean() - flat_trace.mean()
-        # scale = np.ptp(self.obs.unocc_trace.data)/np.ptp(flat_trace)
-        # flat_trace = (flat_trace-flat_trace.mean()) * scale + offset
+        # renormalize each column to the old values
+        # flat_trace *= np.nansum(new_trace, axis=0)/np.nansum(flat_trace, axis=0)
         return flat_trace
 
     def renormalize_trace(
@@ -80,16 +67,21 @@ class Retriever:
     ):
         """
         Renormalize the trace to have the shape of the given input spectrum, while preserving the total flux?
-        Spectrum must have same units as self.obs.primary.spectrum_flux
+
+        Parameters
+        ----------
+        trace : 2-D 
         """
-        # convert spectrum to counts
-        # spectrum /= self.obs.throughput_corr.value
-        norm = spectrum #/ self.obs.primary_spectrum_flux.value
-        renormalized_trace = trace * norm * scale
+        # it is the user's responsibility to multiply the spectrum by the SRF
+        # # convert spectrum to counts
+        # # spectrum /= self.obs.spectral_response_function.value
+        renormalized_trace = trace * scale
+        # if self.obs.is_contrast:
+        #     pass
         return renormalized_trace
 
     def add_trace_to_template(
-            self, trace, inj_row, template : np.ndarray | None = None
+            self, trace : np.ndarray, inj_row : int, template : np.ndarray | None = None
     ) -> np.ndarray:
         # pad trace with zeros to match shape
         if template is None:
