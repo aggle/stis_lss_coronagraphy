@@ -75,7 +75,7 @@ class Retriever:
         # it is the user's responsibility to multiply the spectrum by the SRF
         # # convert spectrum to counts
         # # spectrum /= self.obs.spectral_response_function.value
-        renormalized_trace = trace * scale
+        renormalized_trace = trace * scale * spectrum
         # if self.obs.is_contrast:
         #     pass
         return renormalized_trace
@@ -121,6 +121,8 @@ class Retriever:
         wherenan = np.isnan(data) | np.isnan(model)
         data = data[~wherenan].copy()
         model = model[~wherenan].copy()
+        model -= np.nanmin(model)
+        model = model 
         cc = np.dot(
             data - np.mean(data),
             model - np.mean(model)
