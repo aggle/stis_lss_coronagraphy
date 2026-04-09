@@ -237,4 +237,30 @@ def mean_replace(img, coord):
     return
 
 
+def clean_bad_pixels(
+        img : np.ndarray[float],
+        nrows : int = 5,
+) -> np.ndarray[float]:
+    """
+    Apply the hot and cold pixel cleaning described in Roberge et al., 2005, Section 3.3
+    https://ui.adsabs.harvard.edu/abs/2005ApJ...622.1171R/abstract
 
+    Define a box of size (nrows, img.shape[1]) - i.e. it takes the entire
+    dispersion direction, and a few rows in y. For each column, compute the
+    local noise as (std_box**2 + std_col-with-outlier-pixel**2)**0.5. If the
+    brightest/coldest pixel is more than 5-sigma outside the local noise, it is
+    replaced by the median value.
+
+    Parameters
+    ----------
+    img : np.ndarray
+      the 2-D spectral image
+    nrows : int = 5
+      How many rows to include in the clippnig box.
+
+    Output
+    ------
+    Define your output
+
+    """
+    pass # insert body here
