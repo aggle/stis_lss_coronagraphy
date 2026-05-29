@@ -400,13 +400,21 @@ class SDI:
         self.model_results = model_results
         return
 
-    def assemble_psf_model_image(self) -> np.ndarray:
+    def assemble_psf_model_image(self, fillna=False) -> np.ndarray:
         """
         Use the model_results dataframe to make a PSF model image
         """
         psf_model = np.zeros(self.obs.occ_stamp.data.shape)
-        psf_model[self.model_results.index] += np.stack(self.model_results['model_descaled'])
+        if fillna:
+            psf_model *= np.nan
+        psf_model[self.model_results.index] = np.stack(self.model_results['model_descaled'])
         return psf_model
+    def assemble_residual_image(self, fillna=False) -> np.ndarray:
+        """
+        Use the model_results dataframe to make a PSF model image
+        """
+        residual = self.obs.occ_stamp.data - self.assemble_psf_model_image(fillna=fillna)
+        return residual
 
 def rescale_img(
     img : np.ndarray,
