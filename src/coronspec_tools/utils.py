@@ -239,7 +239,8 @@ def mean_replace(img, coord):
 
 def clean_bad_pixels(
         img : np.ndarray[float],
-        nrows : int = 5,
+        # row : int,
+        std_thresh : float = 50,
 ) -> np.ndarray[float]:
     """
     Apply the hot and cold pixel cleaning described in Roberge et al., 2005, Section 3.3
@@ -263,4 +264,9 @@ def clean_bad_pixels(
     Define your output
 
     """
-    pass # insert body here
+    for row in img:
+        avg, med, std = sigma_clipped_stats(row)
+        bad_pix = np.where(np.abs(row - avg) > std_thresh*std)[0]
+        for bp in bad_pix:
+            row[bp] = sigma_clipped_stats(row[bp-50:bp+51])[1]
+    return
