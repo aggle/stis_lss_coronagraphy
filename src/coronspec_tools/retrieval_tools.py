@@ -26,6 +26,20 @@ class Retriever:
         self.template_trace = self.straighten_unocc_trace(zero_max=True)
 
 
+    def sep2row(self, sep):
+        """
+        Convert separation in arcsec to a row of the stamp
+        """
+        row = self.obs.occ_stamp.wcs.world_to_pixel(self.obs.wlsol[0], sep+self.obs.occ_sep)[1]
+        return row
+
+    def row2sep(self, row):
+        """
+        Convert separation in arcsec to a row of the stamp
+        """
+        sep = self.obs.occ_stamp.wcs.pixel_to_world(self.obs.wlsol[0], row)[1]-self.obs.occ_sep
+        return sep
+
     def straighten_unocc_trace(self, zero_max : bool = False) -> np.ndarray:
         """
         For the non-rectified images, the trace usually isn't straight.
@@ -62,7 +76,7 @@ class Retriever:
     def renormalize_trace(
             self,
             trace : np.ndarray,
-            spectrum : np.ndarray,
+            spectrum : np.ndarray = 1,
             scale : float = 1.
     ):
         """
@@ -115,18 +129,21 @@ class Retriever:
         cc : float
           the dot product of data and model (mean-subtracted)
         """
-        data = np.array(data)
-        model = np.array(model)
-        # mask nans 
-        wherenan = np.isnan(data) | np.isnan(model)
-        data = data[~wherenan].copy()
-        model = model[~wherenan].copy()
-        model -= np.nanmin(model)
-        model = model 
-        cc = np.dot(
-            data - np.mean(data),
-            model - np.mean(model)
-        )
+        try:
+            data = np.array(data)
+            model = np.array(model)
+            # mask nans 
+            wherenan = np.isnan(data) | np.isnan(model)
+            data = data[~wherenan].copy()
+            model = model[~wherenan].copy()
+            model -= np.nanmin(model)
+            model = model 
+            cc = np.dot(
+                data - np.mean(data),
+                model - np.mean(model)
+            )
+        except ValueError:
+            cc = np.nan
         return cc
 
     def inject_and_process(

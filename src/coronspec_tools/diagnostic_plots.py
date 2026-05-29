@@ -1,5 +1,5 @@
 """
-Handy catch-all for diangostic plots
+Handy catch-all for diagnostic plots
 """
 import matplotlib as mpl
 from matplotlib import pyplot as plt
